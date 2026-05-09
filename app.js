@@ -8,7 +8,8 @@ const STORAGE_KEYS = {
   recipes: "kitchen-companion-recipes-v4",
   deletedRecipes: "kitchen-companion-deleted-recipes-v1",
   inventory: "kitchen-companion-inventory-v5",
-  grocery: "kitchen-companion-grocery-v5"
+  grocery: "kitchen-companion-grocery-v5",
+  chopboard: "kitchen-companion-chopboard-v1"
 };
 
 const INVENTORY_CATEGORIES = [
@@ -73,6 +74,8 @@ const PRIORITY_OPTIONS = [
   "Nice to Have",
   "Optional"
 ];
+
+const SERVING_SIZE_OPTIONS = [1, 2, 4, 6];
 
 function normalizePriority(priority) {
   const normalized = String(priority || "").trim().toLowerCase();
@@ -757,6 +760,64 @@ function groceryToRow(item, householdId) {
   };
 }
 
+
+function normalizeChopboardSession(items) {
+  if (!Array.isArray(items)) return [];
+
+  const seenRecipeIds = new Set();
+
+  return items
+    .map((item) => ({
+      recipeId: item?.recipeId || item?.id || "",
+      servings: Math.max(Number(item?.servings) || 1, 1),
+      confirmed: Boolean(item?.confirmed),
+      addedAt: Number(item?.addedAt) || Date.now()
+    }))
+    .filter((item) => {
+      if (!item.recipeId || seenRecipeIds.has(item.recipeId)) return false;
+      seenRecipeIds.add(item.recipeId);
+      return true;
+    });
+}
+
+function normalizeIngredientToken(token) {
+  return String(token || "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b\d+(?:[./]\d+)?\b/g, " ")
+    .replace(/\b(cup|cups|tbsp|tsp|tablespoon|tablespoons|teaspoon|teaspoons|oz|ounce|ounces|lb|lbs|pound|pounds|g|kg|gram|grams|ml|l|pinch|clove|cloves|slice|slices|piece|pieces|pcs|bunch|bunches|can|cans|jar|jars|box|boxes|bag|bags|carton|cartons|loaf|loaves)\b/g, " ")
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\b(and|or|with|for|to|of|fresh|ground|minced|chopped|diced|large|small|medium|optional|taste|needed)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getRecipeIngredientTokens(ingredientsText) {
+  return String(ingredientsText || "")
+    .split(/[,\n]/)
+    .map((token) => normalizeIngredientToken(token))
+    .filter(Boolean);
+}
+
+function getRecipeInventoryMatches(recipe, inventoryItems) {
+  const ingredientTokens = getRecipeIngredientTokens(recipe?.ingredients);
+  const matches = [];
+  const seenInventoryIds = new Set();
+
+  inventoryItems.forEach((item) => {
+    const itemName = normalizeIngredientToken(item.itemName);
+    if (!itemName) return;
+
+    const matched = ingredientTokens.some((token) => token === itemName || token.includes(itemName) || itemName.includes(token));
+    if (!matched || seenInventoryIds.has(item.id)) return;
+
+    seenInventoryIds.add(item.id);
+    matches.push(item);
+  });
+
+  return matches;
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [recipes, setRecipes] = useState(() =>
@@ -768,6 +829,7 @@ function App() {
   const [deletedRecipes, setDeletedRecipes] = useState(() => normalizeRecipes(readStorage(STORAGE_KEYS.deletedRecipes, [])));
   const [inventory, setInventory] = useState(() => normalizeInventory(readStorage(STORAGE_KEYS.inventory, defaultInventory)));
   const [grocery, setGrocery] = useState(() => normalizeGrocery(readStorage(STORAGE_KEYS.grocery, defaultGrocery)));
+  const [chopboardItems, setChopboardItems] = useState(() => normalizeChopboardSession(readStorage(STORAGE_KEYS.chopboard, [])));
   const [notificationPermission, setNotificationPermission] = useState(
     typeof Notification === "undefined" ? "unsupported" : Notification.permission
   );
@@ -796,6 +858,8 @@ function App() {
   const [recipeCategoryFilter, setRecipeCategoryFilter] = useState("All");
   const [recipeTagFilter, setRecipeTagFilter] = useState("All");
   const [recipeSearchFilter, setRecipeSearchFilter] = useState("");
+  const [isShoppingSignalOpen, setIsShoppingSignalOpen] = useState(true);
+  const [isLowAlertsOpen, setIsLowAlertsOpen] = useState(true);
 
   const previousAlertItemsRef = useRef(new Set());
   const remoteSyncTimeoutRef = useRef(null);
@@ -820,6 +884,7 @@ function App() {
   useEffect(() => writeStorage(STORAGE_KEYS.deletedRecipes, deletedRecipes), [deletedRecipes]);
   useEffect(() => writeStorage(STORAGE_KEYS.inventory, inventory), [inventory]);
   useEffect(() => writeStorage(STORAGE_KEYS.grocery, grocery), [grocery]);
+  useEffect(() => writeStorage(STORAGE_KEYS.chopboard, chopboardItems), [chopboardItems]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -1087,6 +1152,11 @@ function App() {
     [recipes, menuCategoryFilter, menuSearchFilter]
   );
 
+  const chopboardSelectionMap = useMemo(
+    () => new Map(chopboardItems.map((item) => [item.recipeId, item])),
+    [chopboardItems]
+  );
+
   const displayedRecipes = useMemo(() => {
     const filtered = recipes.filter((recipe) => {
       const categoryMatch = recipeCategoryFilter === "All" || recipe.category === recipeCategoryFilter;
@@ -1113,6 +1183,30 @@ function App() {
     if (!focused) return filtered;
     return [focused, ...filtered.filter((recipe) => recipe.id !== focusedRecipeId)];
   }, [recipes, focusedRecipeId, recipeCategoryFilter, recipeTagFilter, recipeSearchFilter]);
+
+  const chopboardSessionItems = useMemo(
+    () =>
+      chopboardItems
+        .map((sessionItem) => {
+          const recipe = recipes.find((entry) => entry.id === sessionItem.recipeId);
+          if (!recipe) return null;
+
+          const matchedInventoryItems = getRecipeInventoryMatches(recipe, inventoryWithStatus);
+          const reducibleInventoryItems = matchedInventoryItems.filter((item) => item.status !== "Finished" && Number(item.quantity || 0) > 0);
+
+          return {
+            ...sessionItem,
+            recipe,
+            matchedInventoryItems,
+            reducibleInventoryItems
+          };
+        })
+        .filter(Boolean),
+    [chopboardItems, recipes, inventoryWithStatus]
+  );
+
+  const allChopboardConfirmed = chopboardSessionItems.length > 0 && chopboardSessionItems.every((item) => item.confirmed);
+  const chopboardReducibleCount = chopboardSessionItems.reduce((total, item) => total + item.reducibleInventoryItems.length, 0);
 
   const lowStockSuggestions = useMemo(() => {
     const activeGroceryLinks = new Set(
@@ -1559,14 +1653,96 @@ function App() {
     setActiveTab("recipes");
   }
 
+  function addRecipeToChopboard(recipe) {
+    setChopboardItems((current) => {
+      const existing = current.find((item) => item.recipeId === recipe.id);
+      if (existing) return current;
+
+      return [
+        {
+          recipeId: recipe.id,
+          servings: 1,
+          confirmed: false,
+          addedAt: Date.now()
+        },
+        ...current
+      ];
+    });
+  }
+
+  function updateChopboardServings(recipeId, servings) {
+    setChopboardItems((current) =>
+      current.map((item) =>
+        item.recipeId === recipeId
+          ? { ...item, servings: Math.max(Number(servings) || 1, 1), confirmed: false }
+          : item
+      )
+    );
+  }
+
+  function toggleChopboardConfirm(recipeId) {
+    setChopboardItems((current) =>
+      current.map((item) =>
+        item.recipeId === recipeId
+          ? { ...item, confirmed: !item.confirmed }
+          : item
+      )
+    );
+  }
+
+  function removeFromChopboard(recipeId) {
+    setChopboardItems((current) => current.filter((item) => item.recipeId !== recipeId));
+  }
+
+  function closeChopboardSession() {
+    if (!chopboardSessionItems.length) {
+      alert("Your Chopboard is empty right now.");
+      return;
+    }
+
+    if (!allChopboardConfirmed) {
+      alert("Please confirm every Chopboard item before closing the session.");
+      return;
+    }
+
+    const reductions = new Map();
+
+    chopboardSessionItems.forEach((sessionItem) => {
+      sessionItem.reducibleInventoryItems.forEach((inventoryItem) => {
+        reductions.set(
+          inventoryItem.id,
+          (reductions.get(inventoryItem.id) || 0) + Math.max(Number(sessionItem.servings) || 1, 1)
+        );
+      });
+    });
+
+    setInventory((current) =>
+      current.map((item) => {
+        const reductionAmount = reductions.get(item.id) || 0;
+        if (!reductionAmount || Number(item.quantity || 0) <= 0) return item;
+
+        return {
+          ...item,
+          quantity: Math.max(Number(item.quantity || 0) - reductionAmount, 0)
+        };
+      })
+    );
+
+    setChopboardItems([]);
+    setActiveTab("dashboard");
+    alert("Chopboard session closed. Inventory was reduced for the matched in-stock ingredients.");
+  }
+
   const tabs = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "menu", label: "Menu" },
-    { id: "recipes", label: "Recipes" },
-    { id: "inventory", label: "Kitchen Inventory" },
-    { id: "grocery", label: "Grocery List" }
+    { id: "dashboard", label: "Dashboard", eyebrow: "Home Base", description: "Start here for pantry signals, open grocery items, and the quickest next steps." },
+    { id: "menu", label: "Menu", eyebrow: "Choose Faster", description: "Scroll meal ideas quickly when you just want to decide what to eat." },
+    { id: "chopboard", label: "Chopboard", eyebrow: "Open Session", description: "Collect menu items, confirm the session, and close it to estimate pantry depletion." },
+    { id: "recipes", label: "Recipes", eyebrow: "Cookbook", description: "Keep full recipes, notes, tags, and images in one place." },
+    { id: "inventory", label: "Kitchen Inventory", eyebrow: "Track Pantry", description: "Update what you have at home so grocery needs stay accurate." },
+    { id: "grocery", label: "Grocery List", eyebrow: "Shop Better", description: "See what needs to be bought and mark things restock after shopping." }
   ];
 
+  const activeTabMeta = tabs.find((tab) => tab.id === activeTab) || tabs[0];
   const displayName = currentUser?.email ? currentUser.email.split("@")[0] : "Account";
 
   if (session && currentUser && (isHydratingData || !hasRemoteDataLoaded)) {
@@ -1593,22 +1769,44 @@ function App() {
 
   if (!session || !currentUser) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white via-[#fcfcfa] to-kitchen-cream">
-        <div className="mx-auto flex min-h-screen max-w-3xl items-center px-4 py-10 sm:px-6 lg:px-8">
-          <div className="w-full overflow-hidden rounded-[2rem] border border-kitchen-sage bg-white shadow-soft">
-            <div className="border-b border-kitchen-sage/70 bg-kitchen-sand/50 px-5 py-4 sm:px-6">
-              <p className="text-sm font-medium uppercase tracking-[0.2em] text-kitchen-leaf">
-                Personal Food Manager
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(220,232,215,0.95),_rgba(255,255,255,1)_36%,_rgba(247,236,227,0.85)_100%)]">
+        <div className="mx-auto flex min-h-screen max-w-5xl items-center px-4 py-10 sm:px-6 lg:px-8">
+          <div className="grid w-full gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+            <section className="overflow-hidden rounded-[2.25rem] border border-kitchen-sage/80 bg-[linear-gradient(145deg,_rgba(75,101,74,0.96),_rgba(112,143,103,0.92))] p-6 text-white shadow-soft sm:p-8">
+              <p className="text-sm font-medium uppercase tracking-[0.24em] text-white/75">Personal Food Manager</p>
+              <h1 className="mt-6 max-w-lg text-4xl font-semibold leading-tight sm:text-5xl">Kitchen Companion</h1>
+              <p className="mt-4 max-w-xl text-sm text-white/80 sm:text-base">
+                Keep your menu ideas, recipes, pantry, and grocery list connected in one shared food home.
               </p>
-            </div>
-            <div className="space-y-6 px-5 py-6 sm:px-6 sm:py-8">
-              <div>
-                <h1 className="text-3xl font-semibold sm:text-4xl">Kitchen Companion</h1>
-                <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">
-                  Sign in to access your shared recipes, pantry tracking, and grocery planning.
+              <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-[1.5rem] border border-white/15 bg-white/10 px-4 py-4 backdrop-blur-sm">
+                  <p className="text-xs uppercase tracking-[0.18em] text-white/70">Menu</p>
+                  <p className="mt-2 text-sm text-white/90">Decide what to eat quickly.</p>
+                </div>
+                <div className="rounded-[1.5rem] border border-white/15 bg-white/10 px-4 py-4 backdrop-blur-sm">
+                  <p className="text-xs uppercase tracking-[0.18em] text-white/70">Pantry</p>
+                  <p className="mt-2 text-sm text-white/90">Track what is low or finished.</p>
+                </div>
+                <div className="rounded-[1.5rem] border border-white/15 bg-white/10 px-4 py-4 backdrop-blur-sm">
+                  <p className="text-xs uppercase tracking-[0.18em] text-white/70">Grocery</p>
+                  <p className="mt-2 text-sm text-white/90">Stay ready for the next shop.</p>
+                </div>
+              </div>
+            </section>
+            <div className="overflow-hidden rounded-[2.25rem] border border-kitchen-sage bg-white shadow-soft">
+              <div className="border-b border-kitchen-sage/70 bg-kitchen-sand/50 px-5 py-4 sm:px-6">
+                <p className="text-sm font-medium uppercase tracking-[0.2em] text-kitchen-leaf">
+                  Sign In
                 </p>
               </div>
-              <form onSubmit={handleSignIn} className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-6 px-5 py-6 sm:px-6 sm:py-8">
+                <div>
+                  <h2 className="text-3xl font-semibold sm:text-4xl">Welcome back</h2>
+                  <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">
+                    Sign in to access your shared recipes, pantry tracking, and grocery planning.
+                  </p>
+                </div>
+                <form onSubmit={handleSignIn} className="grid gap-4 md:grid-cols-2">
                 <InputField
                   label="Email"
                   type="email"
@@ -1628,7 +1826,8 @@ function App() {
                 <div className="md:col-span-2 flex justify-end">
                   <PrimaryButton>Sign In</PrimaryButton>
                 </div>
-              </form>
+                </form>
+              </div>
             </div>
           </div>
         </div>
@@ -1637,23 +1836,31 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white via-[#fcfcfa] to-kitchen-cream">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(220,232,215,0.95),_rgba(255,255,255,1)_34%,_rgba(247,236,227,0.85)_100%)]">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <header className="mb-6 overflow-hidden rounded-[2rem] border border-kitchen-sage bg-white shadow-soft">
-          <div className="border-b border-kitchen-sage/70 bg-kitchen-sand/50 px-5 py-4 sm:px-6">
-            <p className="text-sm font-medium uppercase tracking-[0.2em] text-kitchen-leaf">
-              Personal Food Manager
-            </p>
-          </div>
-          <div className="space-y-5 px-5 py-5 sm:px-6">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h1 className="text-3xl font-semibold sm:text-4xl">Kitchen Companion</h1>
-                <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">
-                  A clean, simple food app for recipes, pantry tracking, and grocery planning.
-                </p>
+        <header className="mb-6 overflow-hidden rounded-[2.25rem] border border-kitchen-sage/80 bg-white/95 shadow-soft backdrop-blur-sm">
+          <div className="grid gap-5 border-b border-kitchen-sage/70 bg-[linear-gradient(135deg,_rgba(248,245,238,0.96),_rgba(233,242,230,0.9))] px-5 py-5 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.24em] text-kitchen-leaf">
+                Personal Food Manager
+              </p>
+              <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-kitchen-moss sm:text-5xl">Kitchen Companion</h1>
+              <p className="mt-3 max-w-2xl text-sm text-slate-700 sm:text-base">
+                Your shared food home for deciding what to eat, tracking the pantry, and staying ahead of grocery needs.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3 text-sm">
+                <span className="rounded-full border border-white/70 bg-white/75 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{inventoryWithStatus.length} pantry item{inventoryWithStatus.length !== 1 ? "s" : ""}</span>
+                <span className="rounded-full border border-white/70 bg-white/75 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{recipes.length} recipe{recipes.length !== 1 ? "s" : ""}</span>
+                <span className="rounded-full border border-white/70 bg-white/75 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{grocery.filter((item) => !item.bought && !item.suppressed).length} grocery item{grocery.filter((item) => !item.bought && !item.suppressed).length !== 1 ? "s" : ""}</span>
               </div>
-              <div className="rounded-[1.5rem] border border-kitchen-sage bg-kitchen-cream px-4 py-4 shadow-soft sm:min-w-[260px]">
+            </div>
+            <div className="grid gap-4 sm:grid-cols-[1fr_auto] lg:grid-cols-1">
+              <div className="rounded-[1.6rem] border border-kitchen-sage/70 bg-white/80 px-4 py-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kitchen-leaf">Current Focus</p>
+                <p className="mt-3 text-2xl font-semibold text-kitchen-moss">{activeTabMeta.label}</p>
+                <p className="mt-2 text-sm text-slate-600">{activeTabMeta.description}</p>
+              </div>
+              <div className="rounded-[1.6rem] border border-kitchen-sage/70 bg-kitchen-cream px-4 py-4 shadow-sm sm:min-w-[240px]">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kitchen-leaf">Signed In</p>
                 <p className="mt-2 text-xl font-semibold text-kitchen-moss">{displayName}</p>
                 <div className="mt-4">
@@ -1663,55 +1870,115 @@ function App() {
                 </div>
               </div>
             </div>
-            <nav className="flex flex-wrap gap-2">
+          </div>
+          <div className="space-y-4 px-5 py-5 sm:px-6">
+            <div className="flex flex-wrap gap-2">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`rounded-full border px-5 py-2.5 text-sm font-semibold tracking-[0.02em] transition ${
+                  className={`rounded-[1.2rem] border px-5 py-3 text-sm font-semibold tracking-[0.02em] transition ${
                     activeTab === tab.id
                       ? "border-kitchen-leaf bg-kitchen-leaf text-white shadow-sm"
                       : "border-[#d8e4d2] bg-[#eef6e8] text-kitchen-moss hover:border-kitchen-leaf hover:bg-[#e4f1db]"
                   }`}
                 >
-                  {tab.label}
+                  <span className="block text-left">{tab.label}</span>
+                  <span className={`mt-1 block text-[11px] font-medium uppercase tracking-[0.18em] ${activeTab === tab.id ? "text-white/75" : "text-kitchen-leaf"}`}>{tab.eyebrow}</span>
                 </button>
               ))}
-            </nav>
+            </div>
           </div>
         </header>
 
         {activeTab === "dashboard" && (
           <section className="space-y-6">
+            <section className="grid gap-4 lg:grid-cols-3">
+              <QuickJumpCard
+                eyebrow="Start Here"
+                title="Browse the menu"
+                description="Scroll meal ideas first when you are deciding what to cook today."
+                actionLabel="Open Menu"
+                onClick={() => setActiveTab("menu")}
+                accent="sage"
+              />
+              <QuickJumpCard
+                eyebrow="Keep Updated"
+                title="Update kitchen inventory"
+                description="Adjust pantry quantities after cooking so grocery alerts stay accurate."
+                actionLabel="Open Inventory"
+                onClick={() => setActiveTab("inventory")}
+                accent="cream"
+              />
+              <QuickJumpCard
+                eyebrow="Ready to Shop"
+                title="Review grocery list"
+                description="See what is still open and mark items restock after shopping."
+                actionLabel="Open Grocery"
+                onClick={() => setActiveTab("grocery")}
+                accent="blush"
+              />
+            </section>
             <section className="overflow-hidden rounded-[2rem] border border-kitchen-sage bg-[radial-gradient(circle_at_top_left,_rgba(219,229,218,0.9),_rgba(247,247,243,1)_48%,_rgba(244,224,217,0.55))] px-6 py-6 shadow-soft">
-              <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+              <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.24em] text-kitchen-leaf">Kitchen Pulse</p>
                   <h2 className="mt-3 text-3xl font-semibold text-kitchen-moss sm:text-4xl">{shoppingSignal.label}</h2>
-                  <p className="mt-3 max-w-2xl text-sm text-slate-700 sm:text-base">{shoppingSignal.message}</p>
-                  <div className="mt-5 flex flex-wrap gap-3 text-sm">
-                    <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.length} pantry alert{alertItems.length !== 1 ? "s" : ""}</span>
-                    <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length} critical item{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length !== 1 ? "s" : ""}</span>
-                    <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{grocery.filter((item) => !item.bought && !item.suppressed).length} grocery item{grocery.filter((item) => !item.bought && !item.suppressed).length !== 1 ? "s" : ""}</span>
-                  </div>
                 </div>
-                <ShoppingSignalCard signal={shoppingSignal} alertCount={alertItems.length} criticalCount={alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length} />
+                <SecondaryButton type="button" onClick={() => setIsShoppingSignalOpen((current) => !current)}>
+                  {isShoppingSignalOpen ? "Collapse" : "Expand"}
+                </SecondaryButton>
               </div>
+              {isShoppingSignalOpen ? (
+                <div className="mt-5 grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+                  <div>
+                    <p className="max-w-2xl text-sm text-slate-700 sm:text-base">{shoppingSignal.message}</p>
+                    <div className="mt-5 flex flex-wrap gap-3 text-sm">
+                      <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.length} pantry alert{alertItems.length !== 1 ? "s" : ""}</span>
+                      <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length} critical item{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length !== 1 ? "s" : ""}</span>
+                      <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{grocery.filter((item) => !item.bought && !item.suppressed).length} grocery item{grocery.filter((item) => !item.bought && !item.suppressed).length !== 1 ? "s" : ""}</span>
+                    </div>
+                  </div>
+                  <ShoppingSignalCard signal={shoppingSignal} alertCount={alertItems.length} criticalCount={alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length} />
+                </div>
+              ) : (
+                <div className="mt-5 flex flex-wrap gap-3 text-sm">
+                  <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.length} pantry alert{alertItems.length !== 1 ? "s" : ""}</span>
+                  <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length} critical item{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length !== 1 ? "s" : ""}</span>
+                  <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{grocery.filter((item) => !item.bought && !item.suppressed).length} grocery item{grocery.filter((item) => !item.bought && !item.suppressed).length !== 1 ? "s" : ""}</span>
+                </div>
+              )}
             </section>
 
             <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-              <Panel title="Low or Running Out">
-                <SimpleList
-                  items={alertItems}
-                  emptyText="No pantry items need attention right now."
-                  renderItem={(item) => (
-                    <UrgencyRow
-                      item={item}
-                      detail={`${item.category} • ${item.quantity} ${item.unit} • Threshold ${item.threshold}`}
-                    />
-                  )}
-                />
+              <Panel
+                title="Low or Running Out"
+                action={
+                  <SecondaryButton type="button" onClick={() => setIsLowAlertsOpen((current) => !current)}>
+                    {isLowAlertsOpen ? "Collapse" : "Expand"}
+                  </SecondaryButton>
+                }
+              >
+                {isLowAlertsOpen ? (
+                  <SimpleList
+                    items={alertItems}
+                    emptyText="No pantry items need attention right now."
+                    renderItem={(item) => (
+                      <UrgencyRow
+                        item={item}
+                        detail={`${item.category} • ${item.quantity} ${item.unit} • Threshold ${item.threshold}`}
+                      />
+                    )}
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <span className="rounded-full bg-kitchen-cream px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.length} total alert{alertItems.length !== 1 ? "s" : ""}</span>
+                    <span className="rounded-full bg-kitchen-cream px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length} critical</span>
+                    <span className="rounded-full bg-kitchen-cream px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Essential").length} essential</span>
+                    <span className="rounded-full bg-kitchen-cream px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Nice to Have").length} nice to have</span>
+                  </div>
+                )}
               </Panel>
               <div className="space-y-6">
                 <Panel title="Inventory Snapshot">
@@ -1744,7 +2011,7 @@ function App() {
                         detail={`${item.quantity} ${item.unit} • ${item.category} • ${item.priority}`}
                         action={
                           <SecondaryButton type="button" onClick={() => markRestocked(item)}>
-                            Restocked
+                            Restock to Inventory
                           </SecondaryButton>
                         }
                       />
@@ -1777,37 +2044,189 @@ function App() {
               {filteredMenuRecipes.length === 0 ? (
                 <EmptyState text="No menu items match right now." />
               ) : (
-                filteredMenuRecipes.map((recipe) => (
-                  <article key={recipe.id} className="overflow-hidden rounded-[1.5rem] border border-kitchen-sage bg-white shadow-soft">
-                    <div className="grid items-center gap-3 p-3 sm:grid-cols-[92px_1fr_auto]">
+                filteredMenuRecipes.map((recipe) => {
+                  const chopboardSelection = chopboardSelectionMap.get(recipe.id);
+
+                  return (
+                    <article key={recipe.id} className="overflow-hidden rounded-[1.5rem] border border-kitchen-sage bg-white shadow-soft">
+                      <div className="grid gap-3 p-3 sm:grid-cols-[92px_1fr_auto] sm:items-start">
+                        <div
+                          className="h-20 rounded-[1rem] bg-kitchen-sand"
+                          style={recipe.imageUrl ? {
+                            backgroundImage: `linear-gradient(180deg, rgba(27, 38, 31, 0.08), rgba(27, 38, 31, 0.24)), url(${recipe.imageUrl})`,
+                            backgroundSize: "cover",
+                            backgroundPosition: "center"
+                          } : {
+                            backgroundImage: "linear-gradient(135deg, rgba(234,241,232,0.98), rgba(255,255,255,0.98) 45%, rgba(245,232,226,0.92))"
+                          }}
+                        />
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-lg font-semibold text-kitchen-moss">{recipe.recipeName}</h3>
+                            <span className="rounded-full bg-kitchen-cream px-2.5 py-1 text-[11px] font-medium text-kitchen-leaf">{recipe.category || "Recipe"}</span>
+                            {chopboardSelection ? (
+                              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-medium text-emerald-800">
+                                On Chopboard
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-sm text-slate-600">{recipe.difficulty} • {recipe.prepTime}</p>
+                          <p className="mt-1 line-clamp-2 text-sm text-slate-700">{recipe.notes || "Open the recipe to see the full details for this dish."}</p>
+
+                          {chopboardSelection ? (
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Serving Size</span>
+                              {SERVING_SIZE_OPTIONS.map((size) => (
+                                <button
+                                  key={size}
+                                  type="button"
+                                  onClick={() => updateChopboardServings(recipe.id, size)}
+                                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${chopboardSelection.servings === size ? "bg-kitchen-leaf text-white" : "bg-kitchen-cream text-kitchen-moss hover:bg-kitchen-sage"}`}
+                                >
+                                  {size}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
+                          <PrimaryButton type="button" onClick={() => openRecipeFromMenu(recipe)} className="whitespace-nowrap px-4 py-2 text-sm">
+                            Open Recipe
+                          </PrimaryButton>
+                          <SecondaryButton type="button" onClick={() => addRecipeToChopboard(recipe)} className="whitespace-nowrap px-4 py-2 text-sm">
+                            {chopboardSelection ? "Added to Chopboard" : "Add to Chopboard"}
+                          </SecondaryButton>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })
+              )}
+            </div>
+          </section>
+        )}
+
+
+        {activeTab === "chopboard" && (
+          <section className="space-y-6">
+            <Panel
+              title="The Chopboard"
+              action={
+                <span className="rounded-full bg-kitchen-cream px-4 py-2 text-sm font-medium text-kitchen-moss">
+                  {chopboardSessionItems.length} item{chopboardSessionItems.length !== 1 ? "s" : ""}
+                </span>
+              }
+            >
+              <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                <div className="rounded-[1.75rem] border border-kitchen-sage/70 bg-[linear-gradient(135deg,_rgba(255,255,255,0.98),_rgba(244,249,242,0.94))] px-5 py-5 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-kitchen-leaf">Open Session</p>
+                  <h3 className="mt-2 text-2xl font-semibold text-kitchen-moss">Build your cooking lineup before reducing inventory.</h3>
+                  <p className="mt-3 text-sm text-slate-600">
+                    Add dishes from the Menu, choose serving sizes, then confirm every tile here. Inventory is only reduced after you close the Chopboard session.
+                  </p>
+                </div>
+                <div className="rounded-[1.75rem] border border-kitchen-sage/70 bg-white px-5 py-5 shadow-sm">
+                  <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                    <MiniStat label="Selected" value={chopboardSessionItems.length} total={Math.max(chopboardSessionItems.length, 1)} tone="inStock" />
+                    <MiniStat label="Confirmed" value={chopboardSessionItems.filter((item) => item.confirmed).length} total={Math.max(chopboardSessionItems.length, 1)} tone="lowStock" />
+                    <MiniStat label="Inventory Matches" value={chopboardReducibleCount} total={Math.max(chopboardReducibleCount, 1)} tone="finished" />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <PrimaryButton type="button" onClick={closeChopboardSession} className="px-5 py-2.5" disabled={!chopboardSessionItems.length || !allChopboardConfirmed}>
+                      Close Session and Reduce Inventory
+                    </PrimaryButton>
+                    <SecondaryButton type="button" onClick={() => setActiveTab("menu")}>
+                      Go Back to Menu
+                    </SecondaryButton>
+                  </div>
+                  {!allChopboardConfirmed && chopboardSessionItems.length ? (
+                    <p className="mt-3 text-sm text-slate-600">Confirm every item below before closing the session.</p>
+                  ) : null}
+                </div>
+              </div>
+            </Panel>
+
+            {chopboardSessionItems.length === 0 ? (
+              <EmptyState text="Your Chopboard is empty. Add dishes from the Menu to start a cooking session." />
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {chopboardSessionItems.map((sessionItem) => {
+                  const { recipe } = sessionItem;
+                  return (
+                    <article key={sessionItem.recipeId} className="overflow-hidden rounded-[1.75rem] border border-kitchen-sage bg-white shadow-soft">
                       <div
-                        className="h-20 rounded-[1rem] bg-kitchen-sand"
+                        className="h-40 bg-kitchen-sand"
                         style={recipe.imageUrl ? {
-                          backgroundImage: `linear-gradient(180deg, rgba(27, 38, 31, 0.08), rgba(27, 38, 31, 0.24)), url(${recipe.imageUrl})`,
+                          backgroundImage: `linear-gradient(180deg, rgba(27, 38, 31, 0.18), rgba(27, 38, 31, 0.58)), url(${recipe.imageUrl})`,
                           backgroundSize: "cover",
                           backgroundPosition: "center"
                         } : {
                           backgroundImage: "linear-gradient(135deg, rgba(234,241,232,0.98), rgba(255,255,255,0.98) 45%, rgba(245,232,226,0.92))"
                         }}
                       />
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-semibold text-kitchen-moss">{recipe.recipeName}</h3>
-                          <span className="rounded-full bg-kitchen-cream px-2.5 py-1 text-[11px] font-medium text-kitchen-leaf">{recipe.category || "Recipe"}</span>
+                      <div className="space-y-4 px-5 py-5">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-lg font-semibold text-kitchen-moss">{recipe.recipeName}</p>
+                            <p className="mt-1 text-sm text-slate-600">{recipe.category} • {sessionItem.servings} serving{sessionItem.servings !== 1 ? "s" : ""}</p>
+                          </div>
+                          <PriorityBadge priority={sessionItem.reducibleInventoryItems.length ? "Essential" : "Optional"} />
                         </div>
-                        <p className="mt-1 text-sm text-slate-600">{recipe.difficulty} • {recipe.prepTime}</p>
-                        <p className="mt-1 line-clamp-2 text-sm text-slate-700">{recipe.notes || "Open the recipe to see the full details for this dish."}</p>
+
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Serving Size</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {SERVING_SIZE_OPTIONS.map((size) => (
+                              <button
+                                key={size}
+                                type="button"
+                                onClick={() => updateChopboardServings(sessionItem.recipeId, size)}
+                                className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${sessionItem.servings === size ? "bg-kitchen-leaf text-white" : "bg-kitchen-cream text-kitchen-moss hover:bg-kitchen-sage"}`}
+                              >
+                                {size}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-[1.25rem] bg-kitchen-cream px-4 py-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Inventory Matches</p>
+                          <p className="mt-2 text-sm text-slate-700">
+                            {sessionItem.reducibleInventoryItems.length
+                              ? sessionItem.reducibleInventoryItems.map((item) => item.itemName).join(", ")
+                              : "No in-stock ingredient matches found yet. This session can still close, but nothing will be reduced for this dish."}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="inline-flex items-center gap-2 text-sm font-medium text-kitchen-moss">
+                            <input
+                              type="checkbox"
+                              checked={sessionItem.confirmed}
+                              onChange={() => toggleChopboardConfirm(sessionItem.recipeId)}
+                              className="h-4 w-4 rounded border-kitchen-sage text-kitchen-leaf focus:ring-kitchen-leaf"
+                            />
+                            Confirm this item for session close
+                          </label>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <PrimaryButton type="button" onClick={() => openRecipeFromMenu(recipe)} className="px-4 py-2 text-sm">
+                            Open Recipe
+                          </PrimaryButton>
+                          <SecondaryButton type="button" onClick={() => setActiveTab("menu")} className="px-4 py-2 text-sm">
+                            Add More Items
+                          </SecondaryButton>
+                          <DangerButton type="button" onClick={() => removeFromChopboard(sessionItem.recipeId)} className="px-4 py-2 text-sm">
+                            Remove
+                          </DangerButton>
+                        </div>
                       </div>
-                      <div className="flex justify-start sm:justify-end">
-                        <PrimaryButton type="button" onClick={() => openRecipeFromMenu(recipe)} className="whitespace-nowrap px-4 py-2 text-sm">
-                          Open Recipe
-                        </PrimaryButton>
-                      </div>
-                    </div>
-                  </article>
-                ))
-              )}
-            </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </section>
         )}
 
@@ -2099,7 +2518,7 @@ function App() {
                       Edit
                     </SecondaryButton>
                     <SecondaryButton type="button" onClick={() => markRestocked(item)}>
-                      Restocked
+                      Restock to Inventory
                     </SecondaryButton>
                     <button
                       type="button"
@@ -2150,6 +2569,29 @@ function MiniStat({ label, value, total = 0, tone = "inStock" }) {
         />
       </div>
     </div>
+  );
+}
+
+function QuickJumpCard({ eyebrow, title, description, actionLabel, onClick, accent = "sage" }) {
+  const accents = {
+    sage: "bg-[linear-gradient(145deg,_rgba(231,242,226,0.95),_rgba(255,255,255,0.92))]",
+    cream: "bg-[linear-gradient(145deg,_rgba(250,244,230,0.98),_rgba(255,255,255,0.92))]",
+    blush: "bg-[linear-gradient(145deg,_rgba(248,234,229,0.96),_rgba(255,255,255,0.92))]"
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-[1.75rem] border border-kitchen-sage/70 p-5 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-kitchen-leaf hover:shadow-md ${accents[accent] || accents.sage}`}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-kitchen-leaf">{eyebrow}</p>
+      <h3 className="mt-3 text-2xl font-semibold text-kitchen-moss">{title}</h3>
+      <p className="mt-3 text-sm leading-6 text-slate-600">{description}</p>
+      <span className="mt-5 inline-flex rounded-full border border-kitchen-sage/70 bg-white/80 px-4 py-2 text-sm font-medium text-kitchen-moss">
+        {actionLabel}
+      </span>
+    </button>
   );
 }
 
