@@ -1,0 +1,2388 @@
+const { useEffect, useMemo, useRef, useState } = React;
+
+const SUPABASE_URL = "https://omatlmxlyadyaiufjeur.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_J70xmAGLjKAplO0pghxs_Q_Fo6yUH-s";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const STORAGE_KEYS = {
+  recipes: "kitchen-companion-recipes-v4",
+  deletedRecipes: "kitchen-companion-deleted-recipes-v1",
+  inventory: "kitchen-companion-inventory-v5",
+  grocery: "kitchen-companion-grocery-v5"
+};
+
+const INVENTORY_CATEGORIES = [
+  "Produce",
+  "Dairy",
+  "Protein",
+  "Grains",
+  "Spices",
+  "Soup",
+  "Pantry",
+  "Frozen",
+  "Snacks",
+  "General"
+];
+
+const GROCERY_CATEGORIES = [
+  "Produce",
+  "Dairy",
+  "Protein",
+  "Grains",
+  "Spices",
+  "Soup",
+  "Pantry",
+  "Frozen",
+  "Snacks",
+  "General"
+];
+
+const RECIPE_CATEGORIES = [
+  "Breakfast",
+  "Lunch and Dinner",
+  "Soup",
+  "Side",
+  "Snack",
+  "Dessert",
+  "Drink"
+];
+
+const UNIT_OPTIONS = [
+  "pcs",
+  "bag",
+  "carton",
+  "bottle",
+  "can",
+  "jar",
+  "box",
+  "cup",
+  "tbsp",
+  "tsp",
+  "oz",
+  "lb",
+  "g",
+  "kg",
+  "bulb",
+  "loaf",
+  "item"
+];
+
+const PRIORITY_OPTIONS = [
+  "Critical",
+  "Essential",
+  "Nice to Have",
+  "Optional"
+];
+
+function normalizePriority(priority) {
+  const normalized = String(priority || "").trim().toLowerCase();
+
+  if (normalized === "critical" || normalized === "critic") return "Critical";
+  if (normalized === "essential") return "Essential";
+  if (
+    normalized === "nice to have" ||
+    normalized === "nice-to-have" ||
+    normalized === "nice have" ||
+    normalized === "nice"
+  ) return "Nice to Have";
+  if (normalized === "optional") return "Optional";
+  return "Essential";
+}
+
+const RECIPE_IMAGE_BY_NAME = {
+  "tea": "./assets/break.jpg",
+  "roti": "./assets/bread.jpg",
+  "oatmeal": "./assets/oatmeal.png",
+  "oats": "./assets/Oats.jpg",
+  "breast toast": "./assets/bread.jpg",
+  "toast": "./assets/bread.jpg",
+  "avacado": "./assets/veggies.jpg",
+  "eggs": "./assets/eggs.jpg",
+  "simple eggs": "./assets/eggs.jpg",
+  "banana": "./assets/fruits.png",
+  "coffee": "./assets/break.jpg",
+  "pan cake": "./assets/break.jpg",
+  "waffles": "./assets/break.jpg",
+  "chia pudding": "./assets/break.jpg",
+  "green smoothie": "https://upload.wikimedia.org/wikipedia/commons/1/10/Green_Smoothie.jpg?utm_campaign=index&utm_content=original&utm_source=commons.wikimedia.org",
+  "muffin": "./assets/break.jpg",
+  "donuts": "./assets/break.jpg",
+  "gwar mari": "./assets/bread.jpg",
+  "bagels": "./assets/bread.jpg",
+  "pb jelly sandwich": "./assets/bread.jpg",
+  "dal bhat": "./assets/lentils.jpg",
+  "chowmein": "https://upload.wikimedia.org/wikipedia/commons/4/41/Chowmein.jpg",
+  "spaghetti": "./assets/pasta.png",
+  "haluwa": "./assets/haluwa.jpg",
+  "malpuwa": "./assets/malpuwa.jpg",
+  "mac n cheese": "./assets/pasta.png",
+  "alfredo pasta": "./assets/pasta.png",
+  "pakoda": "./assets/pakoda.jpg",
+  "bara": "./assets/bara.jpg",
+  "chicken": "./assets/chicken.jpg",
+  "thai basil chicken": "./assets/chicken.jpg",
+  "chicken curry": "./assets/chicken.jpg",
+  "chicken soup": "./assets/noodlesoup.jpg",
+  "vegetables": "./assets/veggies.jpg",
+  "mixed vegetables": "./assets/veggies.jpg",
+  "marinara pasta": "./assets/pasta.png",
+  "pizza": "https://upload.wikimedia.org/wikipedia/commons/4/41/Pizza_food.jpg",
+  "burger": "https://upload.wikimedia.org/wikipedia/commons/6/6a/Open_faced_burger.jpg",
+  "wrap/sandwich": "./assets/bread.jpg",
+  "salad": "./assets/veggies.jpg",
+  "chuira": "./assets/chuira.jpg",
+  "samosa": "https://upload.wikimedia.org/wikipedia/commons/e/e1/Indian_samosa.jpg",
+  "ghundruk": "./assets/ghundruk.jpg",
+  "soyabean": "./assets/veggies.jpg",
+  "momos": "https://upload.wikimedia.org/wikipedia/commons/b/be/Momos.jpg",
+  "burrito bowl": "https://upload.wikimedia.org/wikipedia/commons/a/a4/ChipotleBurritoBowl.jpg",
+  "tacos": "https://upload.wikimedia.org/wikipedia/commons/4/4e/Tacos_on_a_plate.jpg",
+  "sel": "./assets/sel-roti.png",
+  "palaak paneer": "https://upload.wikimedia.org/wikipedia/commons/d/da/Yummy_Palak_Paneer.jpg",
+  "palak paneer": "https://upload.wikimedia.org/wikipedia/commons/d/da/Yummy_Palak_Paneer.jpg",
+  "matar paneer": "https://upload.wikimedia.org/wikipedia/commons/4/4e/Matar_Paneer-homemade.jpg",
+  "potatoes": "./assets/potatoes.jpg",
+  "spiced potatoes": "./assets/mustang-aloo.jpg",
+  "spiced aloo": "./assets/mustang-aloo.jpg",
+  "mustang aloo": "./assets/mustang-aloo.jpg",
+  "mustang": "./assets/mustang-aloo.jpg",
+  "choila": "./assets/choila.jpg",
+  "chatpate": "./assets/chatpate.jpg",
+  "pani puri": "./assets/pani-puri.jpg",
+  "fried rice": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Egg_fried_rice.jpg?utm_campaign=index&utm_content=original&utm_source=commons.wikimedia.org",
+  "vegetable fried rice": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Egg_fried_rice.jpg?utm_campaign=index&utm_content=original&utm_source=commons.wikimedia.org",
+  "thukpa": "./assets/noodlesoup.jpg",
+  "samyang noodles": "./assets/noodlesoup.jpg",
+  "chauchau": "./assets/noodlesoup.jpg",
+  "pho": "./assets/noodlesoup.jpg",
+  "lentils": "./assets/lentils.jpg",
+  "corn": "./assets/veggies.jpg",
+  "airfried chickpeas": "./assets/airfried-chickpeas.jpg",
+  "hummus and naan": "./assets/hummus-naan.jpg",
+  "sushi": "https://upload.wikimedia.org/wikipedia/commons/8/8d/Sushi_food.jpg",
+  "falafal": "./assets/falafal.jpg",
+  "fish": "./assets/fish.jpg",
+  "salmon": "./assets/salmon.jpg",
+  "tofu": "./assets/tofu.jpg",
+  "peanut butter banana smoothie": "./assets/fruits.png",
+  "ice cream": "./assets/ice-cream.jpg",
+  "lassi": "./assets/lassi.jpg",
+  "banana milk": "./assets/fruits.png",
+  "fruits": "./assets/fruits.png",
+  "boba": "./assets/boba.jpg",
+  "chips": "./assets/snacks.jpg",
+  "edamame": "./assets/edamame.jpg",
+  "pop corn": "./assets/snacks.jpg",
+  "cake": "./assets/cake.jpg",
+  "nuts": "./assets/snacks.jpg",
+  "cucumber": "./assets/veggies.jpg",
+  "carrots": "./assets/veggies.jpg",
+  "soda": "./assets/soda.jpg",
+  "jaulo": "./assets/jaulo.png",
+  "zeera": "./assets/zeera.jpg"
+};
+
+const RECIPE_IMAGE_BY_CATEGORY = {
+  "Breakfast": "",
+  "Lunch and Dinner": "",
+  "Soup": "",
+  "Side": "",
+  "Snack": "",
+  "Dessert": "",
+  "Drink": ""
+};
+
+const menuRecipeSeeds = [
+  ["Tea", "Breakfast"],
+  ["Roti", "Breakfast"],
+  ["Oatmeal", "Breakfast"],
+  ["Breast Toast", "Breakfast"],
+  ["Avacado", "Breakfast"],
+  ["Eggs", "Breakfast"],
+  ["Banana", "Breakfast"],
+  ["Coffee", "Breakfast"],
+  ["Pan Cake", "Breakfast"],
+  ["Waffles", "Breakfast"],
+  ["Chia Pudding", "Breakfast"],
+  ["Green Smoothie", "Breakfast"],
+  ["Muffin", "Breakfast"],
+  ["Donuts", "Breakfast"],
+  ["Gwar Mari", "Breakfast"],
+  ["Bagels", "Breakfast"],
+  ["PB Jelly Sandwich", "Breakfast"],
+  ["Dal Bhat", "Lunch and Dinner"],
+  ["Chowmein", "Lunch and Dinner"],
+  ["Spaghetti", "Lunch and Dinner"],
+  ["Haluwa", "Lunch and Dinner"],
+  ["Malpuwa", "Lunch and Dinner"],
+  ["Mac n Cheese", "Lunch and Dinner"],
+  ["Alfredo Pasta", "Lunch and Dinner"],
+  ["Pakoda", "Lunch and Dinner"],
+  ["Bara", "Lunch and Dinner"],
+  ["Chicken", "Lunch and Dinner"],
+  ["Vegetables", "Lunch and Dinner"],
+  ["Marinara Pasta", "Lunch and Dinner"],
+  ["Pizza", "Lunch and Dinner"],
+  ["Burger", "Lunch and Dinner"],
+  ["Wrap/Sandwich", "Lunch and Dinner"],
+  ["Salad", "Lunch and Dinner"],
+  ["Chuira", "Lunch and Dinner"],
+  ["Samosa", "Lunch and Dinner"],
+  ["Ghundruk", "Lunch and Dinner"],
+  ["Soyabean", "Lunch and Dinner"],
+  ["Momos", "Lunch and Dinner"],
+  ["Burrito Bowl", "Lunch and Dinner"],
+  ["Tacos", "Lunch and Dinner"],
+  ["Sel", "Lunch and Dinner"],
+  ["Palaak Paneer", "Lunch and Dinner"],
+  ["Matar Paneer", "Lunch and Dinner"],
+  ["Potatoes", "Lunch and Dinner"],
+  ["Choila", "Lunch and Dinner"],
+  ["Chatpate", "Lunch and Dinner"],
+  ["Pani Puri", "Lunch and Dinner"],
+  ["Fried Rice", "Lunch and Dinner"],
+  ["Thukpa", "Lunch and Dinner"],
+  ["Samyang Noodles", "Lunch and Dinner"],
+  ["Chauchau", "Lunch and Dinner"],
+  ["Pho", "Lunch and Dinner"],
+  ["Lentils", "Lunch and Dinner"],
+  ["Corn", "Lunch and Dinner"],
+  ["Airfried Chickpeas", "Lunch and Dinner"],
+  ["Hummus and Naan", "Lunch and Dinner"],
+  ["Sushi", "Lunch and Dinner"],
+  ["Falafal", "Lunch and Dinner"],
+  ["Fish", "Lunch and Dinner"],
+  ["Salmon", "Lunch and Dinner"],
+  ["Tofu", "Lunch and Dinner"],
+  ["Peanut Butter Banana Smoothie", "Snacks"],
+  ["Ice Cream", "Snacks"],
+  ["Lassi", "Snacks"],
+  ["Banana Milk", "Snacks"],
+  ["Fruits", "Snacks"],
+  ["Boba", "Snacks"],
+  ["Chips", "Snacks"],
+  ["Edamame", "Snacks"],
+  ["Pop Corn", "Snacks"],
+  ["Cake", "Snacks"],
+  ["Nuts", "Snacks"],
+  ["Cucumber", "Snacks"],
+  ["Carrots", "Snacks"],
+  ["Soda", "Snacks"]
+].map(([recipeName, category]) => ({
+  id: crypto.randomUUID(),
+  recipeName,
+  category,
+  difficulty: category === "Snacks" || category === "Breakfast" ? "Easy" : "Varies",
+  prepTime: "Varies",
+  ingredients: "Add ingredients for this dish.",
+  steps: "Add your cooking steps or preparation notes for this dish.",
+  notes: "Imported from your Food Hub menu list. Update this recipe with your own ingredients and instructions.",
+  tags: [normalizeRecipeCategory(category)]
+}));
+
+const defaultRecipes = [
+  {
+    id: crypto.randomUUID(),
+    recipeName: "Thai Basil Chicken",
+    category: "Lunch and Dinner",
+    difficulty: "Easy",
+    prepTime: "25 min",
+    ingredients: "Chicken, Thai basil, garlic, chili, soy sauce, rice",
+    steps: "Cook garlic and chili, add chicken, season, stir in basil, and serve over rice.",
+    notes: "Fast dinner option.",
+    tags: ["Thai", "Husband Friendly"]
+  },
+  {
+    id: crypto.randomUUID(),
+    recipeName: "Vegetable Fried Rice",
+    category: "Lunch and Dinner",
+    difficulty: "Easy",
+    prepTime: "20 min",
+    ingredients: "Rice, eggs, carrots, peas, soy sauce, green onion",
+    steps: "Cook vegetables, add rice and eggs, then season and finish with green onion.",
+    notes: "Great with leftover rice.",
+    tags: ["Healthy"]
+  },
+  {
+    id: crypto.randomUUID(),
+    recipeName: "Chicken Soup",
+    category: "Soup",
+    difficulty: "Easy",
+    prepTime: "35 min",
+    ingredients: "Chicken broth, chicken, carrots, celery, garlic, ginger",
+    steps: "Simmer broth, chicken, and vegetables until tender and comforting.",
+    notes: "Good when someone is sick.",
+    tags: ["Healthy", "Sick Day"]
+  },
+  {
+    id: crypto.randomUUID(),
+    recipeName: "Chicken Curry",
+    category: "Lunch and Dinner",
+    difficulty: "Medium",
+    prepTime: "40 minutes",
+    ingredients: "Chicken, onion, garlic, ginger, tomato, salt, turmeric, cumin, oil",
+    steps: "Heat oil and cook onion until soft. Add garlic, ginger, and spices and stir briefly. Add chicken and cook until lightly browned. Add tomato and a splash of water, then simmer until the chicken is cooked through.",
+    notes: "Use boneless or bone-in chicken depending on what you have. Adjust chili and spices to taste.",
+    tags: ["Comfort", "Husband Friendly"]
+  },
+  {
+    id: crypto.randomUUID(),
+    recipeName: "Simple Eggs",
+    category: "Breakfast",
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    ingredients: "Eggs, salt, pepper, oil or butter",
+    steps: "Heat a little oil or butter in a pan. Crack in the eggs and cook to your preferred doneness. Season with salt and pepper. Serve hot with toast, rice, or vegetables.",
+    notes: "Scramble the eggs for a softer texture. Add chopped herbs if you want more flavor.",
+    tags: ["Quick", "Husband Friendly"]
+  },
+  {
+    id: crypto.randomUUID(),
+    recipeName: "Lentils",
+    category: "Lunch and Dinner",
+    difficulty: "Easy",
+    prepTime: "35 minutes",
+    ingredients: "Lentils, onion, garlic, cumin, salt, oil, water",
+    steps: "Rinse the lentils well. Cook onion, garlic, and cumin in a pot with oil. Add lentils and water, then simmer until tender. Season with salt and serve warm.",
+    notes: "Add turmeric for color and warmth. Serve with rice for a complete meal.",
+    tags: ["Healthy", "Budget Friendly"]
+  },
+  {
+    id: crypto.randomUUID(),
+    recipeName: "Oatmeal",
+    category: "Breakfast",
+    difficulty: "Easy",
+    prepTime: "15 minutes",
+    ingredients: "Oats, milk, maple syrup, blueberries, walnuts",
+    steps: "Warm the milk in a small pot over medium heat. Stir in the oats and cook until soft and creamy. Add maple syrup and mix gently. Top with blueberries and walnuts before serving warm.",
+    notes: "Use water and milk together for a lighter texture. Add banana if you want extra sweetness.",
+    tags: ["Healthy", "Quick"]
+  },
+  {
+    id: crypto.randomUUID(),
+    recipeName: "Spiced Potatoes",
+    category: "Side",
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    ingredients: "Potatoes, oil, salt, turmeric, cumin, chili flakes",
+    steps: "Boil or steam potatoes until just tender. Heat oil in a pan and add spices. Add potatoes and toss until coated and lightly crisped. Serve warm.",
+    notes: "Use leftover boiled potatoes for a faster version. Add herbs at the end for freshness.",
+    tags: ["Comfort", "Budget Friendly"]
+  },
+  {
+    id: crypto.randomUUID(),
+    recipeName: "Mixed Vegetables",
+    category: "Lunch and Dinner",
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    ingredients: "Mixed vegetables, onion, garlic, salt, oil, pepper",
+    steps: "Heat oil in a pan and cook onion and garlic briefly. Add vegetables and stir-fry until tender but still bright. Season with salt and pepper. Serve hot with rice, noodles, or flatbread.",
+    notes: "Use any combination of vegetables you already have. Do not overcook so the vegetables stay vibrant.",
+    tags: ["Healthy", "Quick"]
+  },
+  ...menuRecipeSeeds
+];
+
+const defaultInventory = [
+  {
+    id: crypto.randomUUID(),
+    itemName: "Jasmine Rice",
+    category: "Grains",
+    quantity: 1,
+    unit: "bag",
+    threshold: 1,
+    notes: "Main pantry staple",
+    priority: "Critical"
+  },
+  {
+    id: crypto.randomUUID(),
+    itemName: "Eggs",
+    category: "Dairy",
+    quantity: 0,
+    unit: "pcs",
+    threshold: 6,
+    notes: "Finished",
+    priority: "Critical"
+  },
+  {
+    id: crypto.randomUUID(),
+    itemName: "Chicken Broth",
+    category: "Soup",
+    quantity: 1,
+    unit: "carton",
+    threshold: 1,
+    notes: "Useful for soup and sick days",
+    priority: "Essential"
+  },
+  {
+    id: crypto.randomUUID(),
+    itemName: "Garlic",
+    category: "Produce",
+    quantity: 2,
+    unit: "bulbs",
+    threshold: 1,
+    notes: "",
+    priority: "Essential"
+  }
+];
+
+const defaultGrocery = [
+  {
+    id: crypto.randomUUID(),
+    itemName: "Spinach",
+    quantity: 1,
+    unit: "bag",
+    category: "Produce",
+    bought: false,
+    source: "manual",
+    linkedInventoryId: null,
+    suppressed: false,
+    priority: "Nice to Have"
+  }
+];
+
+function readStorage(key, fallback) {
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    localStorage.setItem(key, JSON.stringify(fallback));
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    localStorage.setItem(key, JSON.stringify(fallback));
+    return fallback;
+  }
+}
+
+function writeStorage(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function normalizeRecipeCategory(category) {
+  if (category === "Lunch" || category === "Dinner") {
+    return "Lunch and Dinner";
+  }
+  if (category === "Snacks") {
+    return "Snack";
+  }
+  return category || "Lunch and Dinner";
+}
+
+
+function toBrowserImageUrl(imagePath) {
+  if (!imagePath) return "";
+  if (imagePath.startsWith("http://") || imagePath.startsWith("https://") || imagePath.startsWith("file://") || imagePath.startsWith("data:")) {
+    return imagePath;
+  }
+  try {
+    return new URL(imagePath, window.location.href).href;
+  } catch (_error) {
+    return imagePath;
+  }
+}
+
+function getRecipeImage(recipeName, category) {
+  const normalizedName = (recipeName || "").trim().toLowerCase();
+  const matchedPath = RECIPE_IMAGE_BY_NAME[normalizedName] || RECIPE_IMAGE_BY_CATEGORY[category] || "";
+  return toBrowserImageUrl(matchedPath);
+}
+
+function resolveRecipeImage(recipe) {
+  const recipeName = recipe.recipeName || recipe.name || "";
+  const category = normalizeRecipeCategory(recipe.category || recipe.type || "");
+  const normalizedName = recipeName.trim().toLowerCase();
+  const mappedImage = getRecipeImage(recipeName, category);
+  const currentImage = recipe.imageUrl || recipe.image || "";
+
+  if (!currentImage) {
+    return mappedImage;
+  }
+
+  const normalizedCurrent = String(currentImage).trim();
+  const browserReadyCurrent = toBrowserImageUrl(normalizedCurrent);
+  const looksLikeLegacyLocalPath =
+    normalizedCurrent.includes("/Downloads/") ||
+    normalizedCurrent.startsWith("/Users/") ||
+    normalizedCurrent.startsWith("file:///Users/");
+  const looksLikeProjectAsset =
+    normalizedCurrent.startsWith("./assets/") ||
+    normalizedCurrent.includes("/assets/") ||
+    browserReadyCurrent.includes("/assets/");
+  const hasNamedRecipeImage = Object.prototype.hasOwnProperty.call(RECIPE_IMAGE_BY_NAME, normalizedName);
+
+  if (looksLikeLegacyLocalPath && mappedImage) {
+    return mappedImage;
+  }
+
+  const looksLikeBlockedRemoteImage =
+    normalizedCurrent.includes("century.com.np/") ||
+    normalizedCurrent.includes("pinterest.com/") ||
+    normalizedCurrent.includes("pinimg.com/");
+
+  if (looksLikeBlockedRemoteImage && mappedImage) {
+    return mappedImage;
+  }
+
+  if (looksLikeProjectAsset) {
+    if (hasNamedRecipeImage) {
+      return mappedImage;
+    }
+    return "";
+  }
+
+  return browserReadyCurrent;
+}
+
+function normalizeRecipes(data) {
+  return data.map((recipe) => {
+    const recipeName = recipe.recipeName || recipe.name || "";
+    const category = normalizeRecipeCategory(recipe.category || recipe.type || "");
+
+    return {
+      id: recipe.id || crypto.randomUUID(),
+      recipeName,
+      category,
+      difficulty: recipe.difficulty || "Easy",
+      prepTime: recipe.prepTime || recipe.time || "",
+      ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients.join(", ") : recipe.ingredients || "",
+      steps: recipe.steps || "",
+      notes: recipe.notes || "",
+      imageUrl: resolveRecipeImage(recipe),
+      tags: Array.isArray(recipe.tags)
+        ? recipe.tags
+        : typeof recipe.tags === "string"
+          ? recipe.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
+          : []
+    };
+  });
+}
+
+function mergeSeedRecipes(existingRecipes, seedRecipes) {
+  const seen = new Set(existingRecipes.map((recipe) => recipe.recipeName.trim().toLowerCase()));
+  const missingSeeds = seedRecipes.filter(
+    (recipe) => !seen.has(recipe.recipeName.trim().toLowerCase())
+  );
+  return [...existingRecipes, ...missingSeeds];
+}
+
+function normalizeInventory(data) {
+  return data.map((item) => ({
+    id: item.id || crypto.randomUUID(),
+    itemName: item.itemName || item.name || "",
+    category: item.category || "General",
+    quantity: Number(item.quantity || 0),
+    unit: item.unit || "item",
+    threshold: Number(item.threshold || item.lowStockThreshold || 0),
+    notes: item.notes || "",
+    priority: normalizePriority(item.priority)
+  }));
+}
+
+function normalizeGrocery(data) {
+  return data.map((item) => ({
+    id: item.id || crypto.randomUUID(),
+    itemName: item.itemName || item.name || "",
+    quantity: Number(item.quantity || 1),
+    unit: item.unit || "item",
+    category: item.category || "General",
+    bought: Boolean(item.bought || item.checked),
+    source: item.source || "manual",
+    linkedInventoryId: item.linkedInventoryId || null,
+    suppressed: Boolean(item.suppressed),
+    priority: normalizePriority(item.priority)
+  }));
+}
+
+function getStatus(item) {
+  const quantity = Number(item.quantity);
+  const threshold = Number(item.threshold);
+
+  if (quantity === 0) return "Finished";
+  if (quantity <= threshold) return "Low Stock";
+  return "In Stock";
+}
+
+function getPriorityWeight(priority) {
+  const normalizedPriority = normalizePriority(priority);
+  const weights = {
+    "Critical": 4,
+    "Essential": 3,
+    "Nice to Have": 2,
+    "Optional": 1
+  };
+
+  return weights[normalizedPriority] || 2;
+}
+
+function getStockPercent(item) {
+  const quantity = Number(item.quantity || 0);
+  const threshold = Number(item.threshold || 0);
+
+  if (quantity <= 0) return 0;
+  if (threshold <= 0) return 100;
+  return Math.max(0, Math.min(100, Math.round((quantity / threshold) * 100)));
+}
+
+function getUrgencyTone(item) {
+  const priorityWeight = getPriorityWeight(item.priority);
+  const stockPercent = getStockPercent(item);
+
+  if (item.status === "Finished") {
+    return priorityWeight >= 4 ? "critical" : "high";
+  }
+  if (priorityWeight >= 4 && stockPercent <= 50) return "critical";
+  if (priorityWeight >= 3 && stockPercent <= 60) return "high";
+  if (stockPercent <= 80) return "medium";
+  return "low";
+}
+
+function getShoppingSignal(alertItems) {
+  const criticalFinished = alertItems.filter((item) => normalizePriority(item.priority) === "Critical" && item.status === "Finished").length;
+  const criticalAlerts = alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length;
+  const essentialAlerts = alertItems.filter((item) => normalizePriority(item.priority) === "Essential").length;
+
+  if (criticalFinished >= 1 || criticalAlerts >= 2) {
+    return {
+      label: "Shop ASAP",
+      message: "Critical staples are out or almost gone. This is a strong sign it is time to get groceries now.",
+      tone: "critical"
+    };
+  }
+
+  if (criticalAlerts >= 1 || essentialAlerts >= 3 || alertItems.length >= 4) {
+    return {
+      label: "Plan a Grocery Run Soon",
+      message: "Important pantry items are running low. You should plan a grocery trip soon.",
+      tone: "high"
+    };
+  }
+
+  if (alertItems.length >= 1) {
+    return {
+      label: "Keep an Eye on Stock",
+      message: "A few items need attention, but this does not look urgent yet.",
+      tone: "medium"
+    };
+  }
+
+  return {
+    label: "Pantry Looks Good",
+    message: "No urgent grocery action is needed right now.",
+    tone: "low"
+  };
+}
+
+function emptyRecipe() {
+  return {
+    recipeName: "",
+    category: "",
+    difficulty: "",
+    prepTime: "",
+    ingredients: "",
+    steps: "",
+    notes: "",
+    imageUrl: "",
+    tags: ""
+  };
+}
+
+function emptyInventory() {
+  return {
+    itemName: "",
+    category: "",
+    quantity: "",
+    unit: "",
+    threshold: 0,
+    notes: "",
+    priority: "Essential"
+  };
+}
+
+function emptyGrocery() {
+  return {
+    itemName: "",
+    quantity: "",
+    unit: "",
+    category: "",
+    bought: false,
+    priority: "Essential"
+  };
+}
+
+function recipeToRow(recipe, householdId) {
+  return {
+    id: recipe.id,
+    household_id: householdId,
+    recipe_name: recipe.recipeName,
+    category: recipe.category,
+    difficulty: recipe.difficulty,
+    prep_time: recipe.prepTime,
+    ingredients: recipe.ingredients,
+    steps: recipe.steps,
+    notes: recipe.notes,
+    image_url: recipe.imageUrl || "",
+    tags: recipe.tags || []
+  };
+}
+
+function inventoryToRow(item, householdId) {
+  return {
+    id: item.id,
+    household_id: householdId,
+    item_name: item.itemName,
+    category: item.category,
+    quantity: Number(item.quantity || 0),
+    unit: item.unit,
+    low_stock_threshold: Number(item.threshold || 0),
+    notes: item.notes,
+    priority: normalizePriority(item.priority)
+  };
+}
+
+function groceryToRow(item, householdId) {
+  return {
+    id: item.id,
+    household_id: householdId,
+    item_name: item.itemName,
+    quantity: Number(item.quantity || 1),
+    unit: item.unit,
+    category: item.category,
+    bought: Boolean(item.bought),
+    source: item.source || "manual",
+    linked_inventory_id: item.linkedInventoryId || null,
+    suppressed: Boolean(item.suppressed),
+    priority: normalizePriority(item.priority)
+  };
+}
+
+function App() {
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [recipes, setRecipes] = useState(() =>
+    mergeSeedRecipes(
+      normalizeRecipes(readStorage(STORAGE_KEYS.recipes, defaultRecipes)),
+      normalizeRecipes(defaultRecipes)
+    )
+  );
+  const [deletedRecipes, setDeletedRecipes] = useState(() => normalizeRecipes(readStorage(STORAGE_KEYS.deletedRecipes, [])));
+  const [inventory, setInventory] = useState(() => normalizeInventory(readStorage(STORAGE_KEYS.inventory, defaultInventory)));
+  const [grocery, setGrocery] = useState(() => normalizeGrocery(readStorage(STORAGE_KEYS.grocery, defaultGrocery)));
+  const [notificationPermission, setNotificationPermission] = useState(
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission
+  );
+
+  const [session, setSession] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [householdId, setHouseholdId] = useState(null);
+  const [isHydratingData, setIsHydratingData] = useState(false);
+  const [hasRemoteDataLoaded, setHasRemoteDataLoaded] = useState(false);
+  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+
+  const [recipeForm, setRecipeForm] = useState(emptyRecipe());
+  const [inventoryForm, setInventoryForm] = useState(emptyInventory());
+  const [groceryForm, setGroceryForm] = useState(emptyGrocery());
+
+  const [editingRecipeId, setEditingRecipeId] = useState(null);
+  const [editingInventoryId, setEditingInventoryId] = useState(null);
+  const [editingGroceryId, setEditingGroceryId] = useState(null);
+  const [isRecipeFormOpen, setIsRecipeFormOpen] = useState(false);
+  const [recipeViewMode, setRecipeViewMode] = useState("text");
+  const [isInventoryFormOpen, setIsInventoryFormOpen] = useState(false);
+  const [isGroceryFormOpen, setIsGroceryFormOpen] = useState(false);
+  const [focusedRecipeId, setFocusedRecipeId] = useState(null);
+  const [menuSearchFilter, setMenuSearchFilter] = useState("");
+  const [menuCategoryFilter, setMenuCategoryFilter] = useState("All");
+  const [recipeCategoryFilter, setRecipeCategoryFilter] = useState("All");
+  const [recipeTagFilter, setRecipeTagFilter] = useState("All");
+  const [recipeSearchFilter, setRecipeSearchFilter] = useState("");
+
+  const previousAlertItemsRef = useRef(new Set());
+  const remoteSyncTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    supabaseClient.auth.getSession().then(({ data }) => {
+      setSession(data.session || null);
+      setCurrentUser(data.session?.user || null);
+    });
+
+    const {
+      data: { subscription }
+    } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+      setSession(session || null);
+      setCurrentUser(session?.user || null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => writeStorage(STORAGE_KEYS.recipes, recipes), [recipes]);
+  useEffect(() => writeStorage(STORAGE_KEYS.deletedRecipes, deletedRecipes), [deletedRecipes]);
+  useEffect(() => writeStorage(STORAGE_KEYS.inventory, inventory), [inventory]);
+  useEffect(() => writeStorage(STORAGE_KEYS.grocery, grocery), [grocery]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setHouseholdId(null);
+      setHasRemoteDataLoaded(false);
+      setIsHydratingData(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function hydrateFromSupabase() {
+      setIsHydratingData(true);
+      setHasRemoteDataLoaded(false);
+
+      const { data: profile, error: profileError } = await supabaseClient
+        .from("profiles")
+        .select("household_id")
+        .eq("id", currentUser.id)
+        .single();
+
+      if (!isMounted) return;
+
+      if (profileError || !profile?.household_id) {
+        console.error("Unable to load household profile", profileError);
+        alert("We could not load your household data from Supabase yet.");
+        setHouseholdId(null);
+        setIsHydratingData(false);
+        return;
+      }
+
+      const nextHouseholdId = profile.household_id;
+      setHouseholdId(nextHouseholdId);
+
+      const [recipesResponse, inventoryResponse, groceryResponse] = await Promise.all([
+        supabaseClient
+          .from("recipes")
+          .select("id, recipe_name, category, difficulty, prep_time, ingredients, steps, notes, image_url, tags")
+          .eq("household_id", nextHouseholdId)
+          .order("created_at", { ascending: false }),
+        supabaseClient
+          .from("inventory_items")
+          .select("id, item_name, category, quantity, unit, low_stock_threshold, notes, priority")
+          .eq("household_id", nextHouseholdId)
+          .order("created_at", { ascending: false }),
+        supabaseClient
+          .from("grocery_items")
+          .select("id, item_name, quantity, unit, category, bought, source, linked_inventory_id, suppressed, priority")
+          .eq("household_id", nextHouseholdId)
+          .order("created_at", { ascending: false })
+      ]);
+
+      if (!isMounted) return;
+
+      if (recipesResponse.error || inventoryResponse.error || groceryResponse.error) {
+        console.error("Unable to load Supabase household data", recipesResponse.error || inventoryResponse.error || groceryResponse.error);
+        alert("We could not load your shared household data from Supabase.");
+        setIsHydratingData(false);
+        return;
+      }
+
+      const remoteRecipes = normalizeRecipes((recipesResponse.data || []).map((recipe) => ({
+        id: recipe.id,
+        recipeName: recipe.recipe_name,
+        category: recipe.category,
+        difficulty: recipe.difficulty,
+        prepTime: recipe.prep_time,
+        ingredients: recipe.ingredients,
+        steps: recipe.steps,
+        notes: recipe.notes,
+        imageUrl: recipe.image_url || "",
+        tags: recipe.tags || []
+      })));
+      const remoteInventory = normalizeInventory((inventoryResponse.data || []).map((item) => ({
+        id: item.id,
+        itemName: item.item_name,
+        category: item.category,
+        quantity: item.quantity,
+        unit: item.unit,
+        threshold: item.low_stock_threshold,
+        notes: item.notes,
+        priority: item.priority
+      })));
+      const remoteGrocery = normalizeGrocery((groceryResponse.data || []).map((item) => ({
+        id: item.id,
+        itemName: item.item_name,
+        quantity: item.quantity,
+        unit: item.unit,
+        category: item.category,
+        bought: item.bought,
+        source: item.source,
+        linkedInventoryId: item.linked_inventory_id,
+        suppressed: item.suppressed,
+        priority: item.priority
+      })));
+
+      const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0;
+
+      if (!hasRemoteData) {
+        const seededRecipes = mergeSeedRecipes(recipes, normalizeRecipes(defaultRecipes));
+        const seededInventory = inventory;
+        const seededGrocery = grocery;
+
+        const seedResponses = await Promise.all([
+          seededRecipes.length
+            ? supabaseClient.from("recipes").insert(seededRecipes.map((recipe) => recipeToRow(recipe, nextHouseholdId)))
+            : Promise.resolve({ error: null }),
+          seededInventory.length
+            ? supabaseClient.from("inventory_items").insert(seededInventory.map((item) => inventoryToRow(item, nextHouseholdId)))
+            : Promise.resolve({ error: null }),
+          seededGrocery.length
+            ? supabaseClient.from("grocery_items").insert(seededGrocery.map((item) => groceryToRow(item, nextHouseholdId)))
+            : Promise.resolve({ error: null })
+        ]);
+
+        const seedError = seedResponses.find((response) => response?.error)?.error;
+        if (seedError) {
+          console.error("Unable to seed Supabase household data", seedError);
+          alert("We could not seed your starting household data into Supabase.");
+          setIsHydratingData(false);
+          return;
+        }
+
+        setRecipes(seededRecipes);
+        setInventory(seededInventory);
+        setGrocery(seededGrocery);
+      } else {
+        setRecipes(mergeSeedRecipes(remoteRecipes, normalizeRecipes(defaultRecipes)));
+        setInventory(remoteInventory);
+        setGrocery(remoteGrocery);
+      }
+
+      setHasRemoteDataLoaded(true);
+      setIsHydratingData(false);
+    }
+
+    hydrateFromSupabase();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser || !householdId || !hasRemoteDataLoaded || isHydratingData) {
+      return;
+    }
+
+    if (remoteSyncTimeoutRef.current) {
+      clearTimeout(remoteSyncTimeoutRef.current);
+    }
+
+    remoteSyncTimeoutRef.current = setTimeout(async () => {
+      const [recipeDelete, inventoryDelete, groceryDelete] = await Promise.all([
+        supabaseClient.from("recipes").delete().eq("household_id", householdId),
+        supabaseClient.from("inventory_items").delete().eq("household_id", householdId),
+        supabaseClient.from("grocery_items").delete().eq("household_id", householdId)
+      ]);
+
+      const deleteError = recipeDelete.error || inventoryDelete.error || groceryDelete.error;
+      if (deleteError) {
+        console.error("Unable to clear household data before sync", deleteError);
+        return;
+      }
+
+      const syncResponses = await Promise.all([
+        recipes.length
+          ? supabaseClient.from("recipes").insert(recipes.map((recipe) => recipeToRow(recipe, householdId)))
+          : Promise.resolve({ error: null }),
+        inventory.length
+          ? supabaseClient.from("inventory_items").insert(inventory.map((item) => inventoryToRow(item, householdId)))
+          : Promise.resolve({ error: null }),
+        grocery.length
+          ? supabaseClient.from("grocery_items").insert(grocery.map((item) => groceryToRow(item, householdId)))
+          : Promise.resolve({ error: null })
+      ]);
+
+      const syncError = syncResponses.find((response) => response?.error)?.error;
+      if (syncError) {
+        console.error("Unable to sync household data to Supabase", syncError);
+      }
+    }, 500);
+
+    return () => {
+      if (remoteSyncTimeoutRef.current) {
+        clearTimeout(remoteSyncTimeoutRef.current);
+      }
+    };
+  }, [currentUser, householdId, hasRemoteDataLoaded, isHydratingData, recipes, inventory, grocery]);
+
+  const inventoryWithStatus = useMemo(
+    () => inventory.map((item) => {
+      const status = getStatus(item);
+      const stockPercent = getStockPercent(item);
+      const urgencyTone = getUrgencyTone({ ...item, status });
+      return {
+        ...item,
+        priority: normalizePriority(item.priority),
+        status,
+        stockPercent,
+        urgencyTone,
+        priorityWeight: getPriorityWeight(item.priority)
+      };
+    }),
+    [inventory]
+  );
+
+  const lowStockItems = useMemo(
+    () => inventoryWithStatus.filter((item) => item.status === "Low Stock"),
+    [inventoryWithStatus]
+  );
+
+  const finishedItems = useMemo(
+    () => inventoryWithStatus.filter((item) => item.status === "Finished"),
+    [inventoryWithStatus]
+  );
+
+  const alertItems = useMemo(
+    () =>
+      inventoryWithStatus
+        .filter((item) => item.status === "Low Stock" || item.status === "Finished")
+        .sort((a, b) => (b.priorityWeight - a.priorityWeight) || (a.stockPercent - b.stockPercent)),
+    [inventoryWithStatus]
+  );
+
+  const inStockItems = useMemo(
+    () => inventoryWithStatus.filter((item) => item.status === "In Stock"),
+    [inventoryWithStatus]
+  );
+
+  const weeklyGroceryCount = useMemo(
+    () => grocery.filter((item) => !item.bought && !item.suppressed).length,
+    [grocery]
+  );
+
+  const husbandFriendlyCount = useMemo(
+    () => recipes.filter((recipe) => recipe.tags.includes("Husband Friendly")).length,
+    [recipes]
+  );
+
+  const shoppingSignal = useMemo(() => getShoppingSignal(alertItems), [alertItems]);
+
+  const recipeCategories = useMemo(
+    () => ["All", ...new Set(recipes.map((recipe) => recipe.category).filter(Boolean))],
+    [recipes]
+  );
+
+  const recipeTags = useMemo(
+    () => ["All", ...new Set(recipes.flatMap((recipe) => recipe.tags))],
+    [recipes]
+  );
+
+  const filteredMenuRecipes = useMemo(
+    () =>
+      recipes.filter((recipe) => {
+        const categoryMatch = menuCategoryFilter === "All" || recipe.category === menuCategoryFilter;
+        const searchText = menuSearchFilter.trim().toLowerCase();
+        const searchMatch =
+          !searchText ||
+          recipe.recipeName.toLowerCase().includes(searchText) ||
+          recipe.ingredients.toLowerCase().includes(searchText) ||
+          recipe.tags.some((tag) => tag.toLowerCase().includes(searchText));
+        return categoryMatch && searchMatch;
+      }),
+    [recipes, menuCategoryFilter, menuSearchFilter]
+  );
+
+  const displayedRecipes = useMemo(() => {
+    const filtered = recipes.filter((recipe) => {
+      const categoryMatch = recipeCategoryFilter === "All" || recipe.category === recipeCategoryFilter;
+      const tagMatch = recipeTagFilter === "All" || recipe.tags.includes(recipeTagFilter);
+      const searchText = recipeSearchFilter.trim().toLowerCase();
+      const searchMatch =
+        !searchText ||
+        [
+          recipe.recipeName,
+          recipe.ingredients,
+          recipe.steps,
+          recipe.notes,
+          recipe.category,
+          ...(recipe.tags || [])
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(searchText);
+      return categoryMatch && tagMatch && searchMatch;
+    });
+
+    if (!focusedRecipeId) return filtered;
+    const focused = filtered.find((recipe) => recipe.id === focusedRecipeId);
+    if (!focused) return filtered;
+    return [focused, ...filtered.filter((recipe) => recipe.id !== focusedRecipeId)];
+  }, [recipes, focusedRecipeId, recipeCategoryFilter, recipeTagFilter, recipeSearchFilter]);
+
+  const lowStockSuggestions = useMemo(() => {
+    const activeGroceryLinks = new Set(
+      grocery
+        .filter((item) => !item.bought)
+        .map((item) => item.linkedInventoryId)
+        .filter(Boolean)
+    );
+
+    const suppressedLinks = new Set(
+      grocery
+        .filter((item) => item.suppressed)
+        .map((item) => item.linkedInventoryId)
+        .filter(Boolean)
+    );
+
+    return alertItems.filter(
+      (item) => !activeGroceryLinks.has(item.id) && !suppressedLinks.has(item.id)
+    );
+  }, [alertItems, grocery]);
+
+  useEffect(() => {
+    if (lowStockSuggestions.length === 0) return;
+
+    setGrocery((current) => {
+      const activeLinks = new Set(
+        current.filter((item) => !item.bought).map((item) => item.linkedInventoryId).filter(Boolean)
+      );
+      const suppressedLinks = new Set(
+        current.filter((item) => item.suppressed).map((item) => item.linkedInventoryId).filter(Boolean)
+      );
+
+      const additions = lowStockSuggestions
+        .filter((item) => !activeLinks.has(item.id) && !suppressedLinks.has(item.id))
+        .map((item) => ({
+          id: crypto.randomUUID(),
+          itemName: item.itemName,
+          quantity: Math.max(item.threshold || 1, 1),
+          unit: item.unit || "item",
+          category: item.category || "Pantry",
+          bought: false,
+          source: "low-stock",
+          linkedInventoryId: item.id,
+          suppressed: false,
+          priority: item.priority || "Essential"
+        }));
+
+      if (!additions.length) return current;
+      return [...additions, ...current];
+    });
+  }, [lowStockSuggestions]);
+
+  useEffect(() => {
+    setGrocery((current) => {
+      const alertIds = new Set(alertItems.map((item) => item.id));
+      const next = current.filter((item) => !(item.suppressed && item.linkedInventoryId && !alertIds.has(item.linkedInventoryId)));
+      return next.length === current.length ? current : next;
+    });
+
+    const currentAlertItems = new Set(alertItems.map((item) => item.id));
+    const newlyAlerted = alertItems.filter((item) => !previousAlertItemsRef.current.has(item.id));
+
+    if (
+      newlyAlerted.length > 0 &&
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted"
+    ) {
+      newlyAlerted.forEach((item) => {
+        new Notification("Kitchen Companion", {
+          body: `${item.itemName} needs restocking and was added to your grocery list.`,
+          tag: `inventory-alert-${item.id}`
+        });
+      });
+    }
+
+    previousAlertItemsRef.current = currentAlertItems;
+  }, [alertItems]);
+
+  async function signInWithPassword(email, password) {
+    const { error } = await supabaseClient.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) {
+      alert(error.message);
+    }
+  }
+
+  async function signOutUser() {
+    const { error } = await supabaseClient.auth.signOut();
+    if (error) {
+      alert(error.message);
+    }
+  }
+
+  async function handleSignIn(event) {
+    event.preventDefault();
+    await signInWithPassword(authForm.email, authForm.password);
+    setAuthForm((current) => ({ ...current, password: "" }));
+  }
+
+  function requestNotifications() {
+    if (typeof Notification === "undefined") {
+      setNotificationPermission("unsupported");
+      return;
+    }
+
+    Notification.requestPermission().then((permission) => {
+      setNotificationPermission(permission);
+    });
+  }
+
+  function resetRecipeForm() {
+    setEditingRecipeId(null);
+    setRecipeForm(emptyRecipe());
+    setIsRecipeFormOpen(false);
+  }
+
+  function resetInventoryForm() {
+    setEditingInventoryId(null);
+    setInventoryForm(emptyInventory());
+    setIsInventoryFormOpen(false);
+  }
+
+  function resetGroceryForm() {
+    setEditingGroceryId(null);
+    setGroceryForm(emptyGrocery());
+    setIsGroceryFormOpen(false);
+  }
+
+  function saveRecipe(event) {
+    event.preventDefault();
+    if (!recipeForm.category) {
+      alert("Please choose a category for the recipe.");
+      return;
+    }
+    const normalizedName = recipeForm.recipeName.trim().toLowerCase();
+    const duplicateRecipe = recipes.find(
+      (recipe) => recipe.id !== editingRecipeId && recipe.recipeName.trim().toLowerCase() === normalizedName
+    );
+
+    if (duplicateRecipe) {
+      alert("A recipe with that name already exists. Please edit the existing recipe instead of adding a duplicate.");
+      return;
+    }
+
+    const normalized = {
+      ...recipeForm,
+      tags: recipeForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
+    };
+
+    if (editingRecipeId) {
+      setRecipes((current) =>
+        current.map((recipe) =>
+          recipe.id === editingRecipeId ? { ...normalized, id: editingRecipeId } : recipe
+        )
+      );
+    } else {
+      setRecipes((current) => [{ ...normalized, id: crypto.randomUUID() }, ...current]);
+    }
+
+    resetRecipeForm();
+  }
+
+  function saveInventory(event) {
+    event.preventDefault();
+    if (!inventoryForm.category) {
+      alert("Please choose a category for the inventory item.");
+      return;
+    }
+    const normalized = {
+      ...inventoryForm,
+      quantity: Number(inventoryForm.quantity),
+      threshold: Number(inventoryForm.threshold),
+      priority: inventoryForm.priority || "Essential"
+    };
+
+    if (editingInventoryId) {
+      setInventory((current) =>
+        current.map((item) =>
+          item.id === editingInventoryId ? { ...normalized, id: editingInventoryId } : item
+        )
+      );
+    } else {
+      setInventory((current) => {
+        const duplicateItem = current.find(
+          (item) => item.itemName.trim().toLowerCase() === normalized.itemName.trim().toLowerCase()
+        );
+
+        if (!duplicateItem) {
+          return [{ ...normalized, id: crypto.randomUUID() }, ...current];
+        }
+
+        return current.map((item) =>
+          item.id === duplicateItem.id
+            ? {
+                ...item,
+                category: normalized.category || item.category,
+                quantity: Number(item.quantity || 0) + Number(normalized.quantity || 0),
+                unit: normalized.unit || item.unit,
+                threshold: Math.max(Number(item.threshold || 0), Number(normalized.threshold || 0)),
+                notes: normalized.notes || item.notes,
+                priority: normalized.priority || item.priority
+              }
+            : item
+        );
+      });
+    }
+
+    resetInventoryForm();
+  }
+
+  function saveGrocery(event) {
+    event.preventDefault();
+    if (!groceryForm.category) {
+      alert("Please choose a category for the grocery item.");
+      return;
+    }
+    const existing = grocery.find((item) => item.id === editingGroceryId);
+    const normalized = {
+      ...groceryForm,
+      quantity: Number(groceryForm.quantity),
+      bought: groceryForm.bought,
+      source: existing?.source || "manual",
+      linkedInventoryId: existing?.linkedInventoryId || null,
+      suppressed: existing?.suppressed || false,
+      priority: groceryForm.priority || existing?.priority || "Essential"
+    };
+
+    if (editingGroceryId) {
+      setGrocery((current) =>
+        current.map((item) =>
+          item.id === editingGroceryId ? { ...normalized, id: editingGroceryId } : item
+        )
+      );
+    } else {
+      setGrocery((current) => {
+        const duplicateItem = current.find(
+          (item) =>
+            !item.suppressed &&
+            item.itemName.trim().toLowerCase() === normalized.itemName.trim().toLowerCase() &&
+            item.bought === normalized.bought
+        );
+
+        if (!duplicateItem) {
+          return [{ ...normalized, id: crypto.randomUUID() }, ...current];
+        }
+
+        return current.map((item) =>
+          item.id === duplicateItem.id
+            ? {
+                ...item,
+                quantity: Number(item.quantity || 0) + Number(normalized.quantity || 0),
+                unit: normalized.unit || item.unit,
+                category: normalized.category || item.category,
+                priority: normalized.priority || item.priority,
+                bought: normalized.bought,
+                suppressed: false
+              }
+            : item
+        );
+      });
+    }
+
+    resetGroceryForm();
+  }
+
+  function startRecipeEdit(recipe) {
+    setEditingRecipeId(recipe.id);
+    setRecipeForm({ ...recipe, tags: recipe.tags.join(", ") });
+    setIsRecipeFormOpen(true);
+    setActiveTab("recipes");
+  }
+
+  function startInventoryEdit(item) {
+    setEditingInventoryId(item.id);
+    setInventoryForm({
+      itemName: item.itemName,
+      category: item.category,
+      quantity: item.quantity,
+      unit: item.unit,
+      threshold: item.threshold,
+      notes: item.notes,
+      priority: item.priority || "Essential"
+    });
+    setIsInventoryFormOpen(true);
+    setActiveTab("inventory");
+  }
+
+  function startGroceryEdit(item) {
+    setEditingGroceryId(item.id);
+    setGroceryForm({
+      itemName: item.itemName,
+      quantity: item.quantity,
+      unit: item.unit,
+      category: item.category,
+      bought: item.bought,
+      priority: item.priority || "Essential"
+    });
+    setIsGroceryFormOpen(true);
+    setActiveTab("grocery");
+  }
+
+  function deleteRecipe(id) {
+    const target = recipes.find((item) => item.id === id);
+    if (!target) return;
+
+    setDeletedRecipes((current) => [target, ...current.filter((item) => item.id !== id)]);
+    setRecipes((current) => current.filter((item) => item.id !== id));
+    if (editingRecipeId === id) resetRecipeForm();
+  }
+
+  function restoreRecipe(id) {
+    const target = deletedRecipes.find((item) => item.id === id);
+    if (!target) return;
+
+    setRecipes((current) => [target, ...current.filter((item) => item.id !== id)]);
+    setDeletedRecipes((current) => current.filter((item) => item.id !== id));
+  }
+
+  function permanentlyDeleteRecipe(id) {
+    setDeletedRecipes((current) => current.filter((item) => item.id !== id));
+  }
+
+  function deleteInventory(id) {
+    setInventory((current) => current.filter((item) => item.id !== id));
+    setGrocery((current) => current.filter((item) => item.linkedInventoryId !== id));
+    if (editingInventoryId === id) resetInventoryForm();
+  }
+
+  function deleteGrocery(id) {
+    setGrocery((current) => {
+      const target = current.find((item) => item.id === id);
+      if (!target) return current;
+
+      if (target.linkedInventoryId) {
+        return current.map((item) =>
+          item.id === id
+            ? { ...item, bought: false, suppressed: true }
+            : item
+        );
+      }
+
+      return current.filter((item) => item.id !== id);
+    });
+
+    if (editingGroceryId === id) {
+      resetGroceryForm();
+    }
+  }
+
+  function addSingleLowStockItem(item) {
+    setGrocery((current) => {
+      const exists = current.some(
+        (entry) => entry.linkedInventoryId === item.id && !entry.bought
+      );
+
+      if (exists) return current;
+
+      return [
+        {
+          id: crypto.randomUUID(),
+          itemName: item.itemName,
+          quantity: Math.max(item.threshold || 1, 1),
+          unit: item.unit || "item",
+          category: item.category || "Pantry",
+          bought: false,
+          source: "low-stock",
+          linkedInventoryId: item.id,
+          suppressed: false,
+          priority: item.priority || "Essential"
+        },
+        ...current.filter((entry) => entry.linkedInventoryId !== item.id || !entry.suppressed)
+      ];
+    });
+  }
+
+  function addLowStockItemsToGrocery() {
+    lowStockSuggestions.forEach(addSingleLowStockItem);
+    setActiveTab("grocery");
+  }
+
+  function toggleGroceryBought(id) {
+    setGrocery((current) =>
+      current.map((item) => {
+        if (item.id !== id) return item;
+
+        if (!item.bought && item.linkedInventoryId) {
+          return { ...item, bought: true, suppressed: true };
+        }
+
+        return { ...item, bought: !item.bought };
+      })
+    );
+  }
+
+  function markRestocked(groceryItem) {
+    setInventory((current) => {
+      const linked = groceryItem.linkedInventoryId
+        ? current.find((item) => item.id === groceryItem.linkedInventoryId)
+        : current.find((item) => item.itemName.toLowerCase() === groceryItem.itemName.toLowerCase());
+
+      if (!linked) {
+        return [
+          {
+            id: crypto.randomUUID(),
+            itemName: groceryItem.itemName,
+            category: groceryItem.category || "General",
+            quantity: Math.max(Number(groceryItem.quantity) || 1, 1),
+            unit: groceryItem.unit || "item",
+            threshold: 1,
+            notes: "Restocked from grocery",
+            priority: groceryItem.priority || "Essential"
+          },
+          ...current
+        ];
+      }
+
+      return current.map((item) =>
+        item.id === linked.id
+          ? {
+              ...item,
+              quantity: Number(item.quantity || 0) + Math.max(Number(groceryItem.quantity) || 1, 1),
+              unit: groceryItem.unit || item.unit,
+              category: groceryItem.category || item.category,
+              notes: item.notes,
+              priority: groceryItem.priority || item.priority
+            }
+          : item
+      );
+    });
+
+    setGrocery((current) => current.map((item) =>
+      item.id === groceryItem.id
+        ? { ...item, bought: true, suppressed: true }
+        : item
+    ));
+  }
+
+  function openRecipeFromMenu(recipe) {
+    setFocusedRecipeId(recipe.id);
+    setRecipeViewMode("text");
+    setActiveTab("recipes");
+  }
+
+  const tabs = [
+    { id: "dashboard", label: "Dashboard" },
+    { id: "menu", label: "Menu" },
+    { id: "recipes", label: "Recipes" },
+    { id: "inventory", label: "Kitchen Inventory" },
+    { id: "grocery", label: "Grocery List" }
+  ];
+
+  const displayName = currentUser?.email ? currentUser.email.split("@")[0] : "Account";
+
+  if (session && currentUser && (isHydratingData || !hasRemoteDataLoaded)) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-white via-[#fcfcfa] to-kitchen-cream">
+        <div className="mx-auto flex min-h-screen max-w-3xl items-center px-4 py-10 sm:px-6 lg:px-8">
+          <div className="w-full overflow-hidden rounded-[2rem] border border-kitchen-sage bg-white shadow-soft">
+            <div className="border-b border-kitchen-sage/70 bg-kitchen-sand/50 px-5 py-4 sm:px-6">
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-kitchen-leaf">
+                Personal Food Manager
+              </p>
+            </div>
+            <div className="space-y-4 px-5 py-8 text-center sm:px-6">
+              <h1 className="text-3xl font-semibold sm:text-4xl">Kitchen Companion</h1>
+              <p className="text-sm text-slate-600 sm:text-base">
+                Loading your shared household recipes, inventory, and grocery list from Supabase.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session || !currentUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-white via-[#fcfcfa] to-kitchen-cream">
+        <div className="mx-auto flex min-h-screen max-w-3xl items-center px-4 py-10 sm:px-6 lg:px-8">
+          <div className="w-full overflow-hidden rounded-[2rem] border border-kitchen-sage bg-white shadow-soft">
+            <div className="border-b border-kitchen-sage/70 bg-kitchen-sand/50 px-5 py-4 sm:px-6">
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-kitchen-leaf">
+                Personal Food Manager
+              </p>
+            </div>
+            <div className="space-y-6 px-5 py-6 sm:px-6 sm:py-8">
+              <div>
+                <h1 className="text-3xl font-semibold sm:text-4xl">Kitchen Companion</h1>
+                <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">
+                  Sign in to access your shared recipes, pantry tracking, and grocery planning.
+                </p>
+              </div>
+              <form onSubmit={handleSignIn} className="grid gap-4 md:grid-cols-2">
+                <InputField
+                  label="Email"
+                  type="email"
+                  value={authForm.email}
+                  onChange={(value) => setAuthForm({ ...authForm, email: value })}
+                  placeholder="Enter your email"
+                  required
+                />
+                <InputField
+                  label="Password"
+                  type="password"
+                  value={authForm.password}
+                  onChange={(value) => setAuthForm({ ...authForm, password: value })}
+                  placeholder="Enter your password"
+                  required
+                />
+                <div className="md:col-span-2 flex justify-end">
+                  <PrimaryButton>Sign In</PrimaryButton>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-white via-[#fcfcfa] to-kitchen-cream">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <header className="mb-6 overflow-hidden rounded-[2rem] border border-kitchen-sage bg-white shadow-soft">
+          <div className="border-b border-kitchen-sage/70 bg-kitchen-sand/50 px-5 py-4 sm:px-6">
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-kitchen-leaf">
+              Personal Food Manager
+            </p>
+          </div>
+          <div className="space-y-5 px-5 py-5 sm:px-6">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h1 className="text-3xl font-semibold sm:text-4xl">Kitchen Companion</h1>
+                <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">
+                  A clean, simple food app for recipes, pantry tracking, and grocery planning.
+                </p>
+              </div>
+              <div className="rounded-[1.5rem] border border-kitchen-sage bg-kitchen-cream px-4 py-4 shadow-soft sm:min-w-[260px]">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kitchen-leaf">Signed In</p>
+                <p className="mt-2 text-xl font-semibold text-kitchen-moss">{displayName}</p>
+                <div className="mt-4">
+                  <SecondaryButton type="button" onClick={signOutUser}>
+                    Sign Out
+                  </SecondaryButton>
+                </div>
+              </div>
+            </div>
+            <nav className="flex flex-wrap gap-2">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`rounded-full border px-5 py-2.5 text-sm font-semibold tracking-[0.02em] transition ${
+                    activeTab === tab.id
+                      ? "border-kitchen-leaf bg-kitchen-leaf text-white shadow-sm"
+                      : "border-[#d8e4d2] bg-[#eef6e8] text-kitchen-moss hover:border-kitchen-leaf hover:bg-[#e4f1db]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </header>
+
+        {activeTab === "dashboard" && (
+          <section className="space-y-6">
+            <section className="overflow-hidden rounded-[2rem] border border-kitchen-sage bg-[radial-gradient(circle_at_top_left,_rgba(219,229,218,0.9),_rgba(247,247,243,1)_48%,_rgba(244,224,217,0.55))] px-6 py-6 shadow-soft">
+              <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-kitchen-leaf">Kitchen Pulse</p>
+                  <h2 className="mt-3 text-3xl font-semibold text-kitchen-moss sm:text-4xl">{shoppingSignal.label}</h2>
+                  <p className="mt-3 max-w-2xl text-sm text-slate-700 sm:text-base">{shoppingSignal.message}</p>
+                  <div className="mt-5 flex flex-wrap gap-3 text-sm">
+                    <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.length} pantry alert{alertItems.length !== 1 ? "s" : ""}</span>
+                    <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length} critical item{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length !== 1 ? "s" : ""}</span>
+                    <span className="rounded-full bg-white/80 px-4 py-2 font-medium text-kitchen-moss shadow-sm">{grocery.filter((item) => !item.bought && !item.suppressed).length} grocery item{grocery.filter((item) => !item.bought && !item.suppressed).length !== 1 ? "s" : ""}</span>
+                  </div>
+                </div>
+                <ShoppingSignalCard signal={shoppingSignal} alertCount={alertItems.length} criticalCount={alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length} />
+              </div>
+            </section>
+
+            <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+              <Panel title="Low or Running Out">
+                <SimpleList
+                  items={alertItems}
+                  emptyText="No pantry items need attention right now."
+                  renderItem={(item) => (
+                    <UrgencyRow
+                      item={item}
+                      detail={`${item.category} • ${item.quantity} ${item.unit} • Threshold ${item.threshold}`}
+                    />
+                  )}
+                />
+              </Panel>
+              <div className="space-y-6">
+                <Panel title="Inventory Snapshot">
+                  <div className="mb-4 overflow-hidden rounded-[1.5rem] border border-kitchen-sage/60 bg-[radial-gradient(circle_at_top_left,_rgba(219,229,218,0.95),_rgba(255,255,255,0.92)_52%,_rgba(244,224,217,0.6))] px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kitchen-leaf">Pantry Mood</p>
+                        <p className="mt-2 text-sm text-slate-700">A quick visual check of what is stocked, low, or finished.</p>
+                      </div>
+                      <div className="flex items-end gap-2 text-3xl">
+                        <span className="rounded-2xl bg-white/80 px-3 py-2 shadow-sm">🥬</span>
+                        <span className="rounded-2xl bg-white/80 px-3 py-2 shadow-sm">🥚</span>
+                        <span className="rounded-2xl bg-white/80 px-3 py-2 shadow-sm">🥫</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-3">
+                    <MiniStat label="In Stock" value={inStockItems.length} total={inventoryWithStatus.length} tone="inStock" />
+                    <MiniStat label="Low Stock" value={lowStockItems.length} total={inventoryWithStatus.length} tone="lowStock" />
+                    <MiniStat label="Finished" value={finishedItems.length} total={inventoryWithStatus.length} tone="finished" />
+                  </div>
+                </Panel>
+                <Panel title="Open Grocery Items">
+                  <SimpleList
+                    items={grocery.filter((item) => !item.bought && !item.suppressed).sort((a, b) => getPriorityWeight(b.priority) - getPriorityWeight(a.priority))}
+                    emptyText="Your grocery list is clear."
+                    renderItem={(item) => (
+                      <ListRow
+                        title={item.itemName}
+                        detail={`${item.quantity} ${item.unit} • ${item.category} • ${item.priority}`}
+                        action={
+                          <SecondaryButton type="button" onClick={() => markRestocked(item)}>
+                            Restocked
+                          </SecondaryButton>
+                        }
+                      />
+                    )}
+                  />
+                </Panel>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "menu" && (
+          <section className="space-y-6">
+            <Panel
+              title="Menu Ideas"
+              action={
+                <span className="rounded-full bg-kitchen-cream px-4 py-2 text-sm font-medium text-kitchen-moss">
+                  {filteredMenuRecipes.length} item{filteredMenuRecipes.length !== 1 ? "s" : ""}
+                </span>
+              }
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <InputField label="Search Menu" value={menuSearchFilter} onChange={setMenuSearchFilter} placeholder="Soup, noodles, chicken..." />
+                <SelectField label="Category" value={menuCategoryFilter} onChange={setMenuCategoryFilter} options={recipeCategories} />
+              </div>
+              <p className="mt-3 text-sm text-slate-600">Use this page when you just want to decide what to eat. Open a recipe when you want the full ingredients and steps.</p>
+            </Panel>
+
+            <div className="space-y-3">
+              {filteredMenuRecipes.length === 0 ? (
+                <EmptyState text="No menu items match right now." />
+              ) : (
+                filteredMenuRecipes.map((recipe) => (
+                  <article key={recipe.id} className="overflow-hidden rounded-[1.5rem] border border-kitchen-sage bg-white shadow-soft">
+                    <div className="grid items-center gap-3 p-3 sm:grid-cols-[92px_1fr_auto]">
+                      <div
+                        className="h-20 rounded-[1rem] bg-kitchen-sand"
+                        style={recipe.imageUrl ? {
+                          backgroundImage: `linear-gradient(180deg, rgba(27, 38, 31, 0.08), rgba(27, 38, 31, 0.24)), url(${recipe.imageUrl})`,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center"
+                        } : {
+                          backgroundImage: "linear-gradient(135deg, rgba(234,241,232,0.98), rgba(255,255,255,0.98) 45%, rgba(245,232,226,0.92))"
+                        }}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-lg font-semibold text-kitchen-moss">{recipe.recipeName}</h3>
+                          <span className="rounded-full bg-kitchen-cream px-2.5 py-1 text-[11px] font-medium text-kitchen-leaf">{recipe.category || "Recipe"}</span>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-600">{recipe.difficulty} • {recipe.prepTime}</p>
+                        <p className="mt-1 line-clamp-2 text-sm text-slate-700">{recipe.notes || "Open the recipe to see the full details for this dish."}</p>
+                      </div>
+                      <div className="flex justify-start sm:justify-end">
+                        <PrimaryButton type="button" onClick={() => openRecipeFromMenu(recipe)} className="whitespace-nowrap px-4 py-2 text-sm">
+                          Open Recipe
+                        </PrimaryButton>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        )}
+
+        {activeTab === "recipes" && (
+          <section className="space-y-6">
+            <Panel
+              title={editingRecipeId ? "Edit Recipe" : "Add New Recipe"}
+              action={
+                <SecondaryButton type="button" onClick={() => setIsRecipeFormOpen((current) => !current)}>
+                  {isRecipeFormOpen ? "Hide Form" : editingRecipeId ? "Open Form" : "Add Recipe"}
+                </SecondaryButton>
+              }
+            >
+              {isRecipeFormOpen ? (
+                <form onSubmit={saveRecipe} className="grid gap-4 md:grid-cols-2">
+                  <InputField label="Recipe Name" value={recipeForm.recipeName} onChange={(value) => setRecipeForm({ ...recipeForm, recipeName: value })} required />
+                  <SelectField label="Category" value={recipeForm.category} onChange={(value) => setRecipeForm({ ...recipeForm, category: value })} options={RECIPE_CATEGORIES} placeholder="Select a category" required />
+                  <InputField label="Difficulty" value={recipeForm.difficulty} onChange={(value) => setRecipeForm({ ...recipeForm, difficulty: value })} required />
+                  <InputField label="Prep Time" value={recipeForm.prepTime} onChange={(value) => setRecipeForm({ ...recipeForm, prepTime: value })} required />
+                  <TextAreaField label="Ingredients" value={recipeForm.ingredients} onChange={(value) => setRecipeForm({ ...recipeForm, ingredients: value })} required />
+                  <TextAreaField label="Steps" value={recipeForm.steps} onChange={(value) => setRecipeForm({ ...recipeForm, steps: value })} required />
+                  <TextAreaField label="Notes" value={recipeForm.notes} onChange={(value) => setRecipeForm({ ...recipeForm, notes: value })} />
+                  <InputField label="Image URL" value={recipeForm.imageUrl} onChange={(value) => setRecipeForm({ ...recipeForm, imageUrl: value })} placeholder="Paste a matching recipe image link" />
+                  <InputField label="Tags" value={recipeForm.tags} onChange={(value) => setRecipeForm({ ...recipeForm, tags: value })} placeholder="Healthy, Husband Friendly" />
+                  <div className="md:col-span-2 flex flex-wrap gap-3">
+                    <PrimaryButton>{editingRecipeId ? "Update Recipe" : "Save Recipe"}</PrimaryButton>
+                    {editingRecipeId && (
+                      <SecondaryButton type="button" onClick={resetRecipeForm}>
+                        Cancel
+                      </SecondaryButton>
+                    )}
+                  </div>
+                </form>
+              ) : (
+                <p className="text-sm text-slate-600">Open this section when you want to add or edit a recipe.</p>
+              )}
+            </Panel>
+
+            <Panel title="Filter Recipes">
+              <div className="grid gap-4 md:grid-cols-3">
+                <InputField label="Search Recipes" value={recipeSearchFilter} onChange={setRecipeSearchFilter} placeholder="Chicken, soup, oats..." />
+                <SelectField label="Category" value={recipeCategoryFilter} onChange={setRecipeCategoryFilter} options={recipeCategories} />
+                <SelectField label="Tag" value={recipeTagFilter} onChange={setRecipeTagFilter} options={recipeTags} />
+              </div>
+            </Panel>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.5rem] border border-kitchen-sage bg-white px-5 py-4 shadow-soft">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kitchen-leaf">Recipe View</p>
+                <p className="mt-1 text-sm text-slate-600">Switch between a cleaner text layout and a photo-based layout.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <SecondaryButton type="button" onClick={() => setRecipeViewMode("text")} className={recipeViewMode === "text" ? "ring-2 ring-kitchen-sage" : ""}>
+                  Text Mode
+                </SecondaryButton>
+                <SecondaryButton type="button" onClick={() => setRecipeViewMode("picture")} className={recipeViewMode === "picture" ? "ring-2 ring-kitchen-sage" : ""}>
+                  Picture Mode
+                </SecondaryButton>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              {displayedRecipes.length === 0 ? (
+                <EmptyState text="No recipes saved yet." />
+              ) : (
+                displayedRecipes.map((recipe) => (
+                  <article
+                    key={recipe.id}
+                    className={`overflow-hidden rounded-[1.75rem] border border-kitchen-sage shadow-soft ${
+                      recipeViewMode === "picture"
+                        ? "relative min-h-[24rem] bg-kitchen-moss"
+                        : "bg-white p-5"
+                    }`}
+                    style={recipeViewMode === "picture" && recipe.imageUrl
+                      ? {
+                          backgroundImage: `linear-gradient(180deg, rgba(27, 38, 31, 0.24), rgba(27, 38, 31, 0.9)), url(${recipe.imageUrl})`,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center"
+                        }
+                      : recipeViewMode === "picture"
+                        ? {
+                            backgroundImage: "linear-gradient(135deg, rgba(234,241,232,0.98), rgba(255,255,255,0.98) 45%, rgba(245,232,226,0.92))"
+                          }
+                        : undefined}
+                  >
+                    <div className={recipeViewMode === "picture" ? (recipe.imageUrl ? "flex min-h-[24rem] flex-col justify-between bg-gradient-to-t from-black/55 via-black/20 to-black/5 p-5 text-white" : "flex min-h-[24rem] flex-col justify-between p-5 text-slate-900") : ""}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="text-xl font-semibold">{recipe.recipeName}</h3>
+                          <p className={`mt-1 text-sm ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white/85" : "text-slate-600") : "text-slate-600"}`}>
+                            {recipe.category} • {recipe.difficulty} • {recipe.prepTime}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <SecondaryButton type="button" onClick={() => startRecipeEdit(recipe)} className={recipeViewMode === "picture" && recipe.imageUrl ? "bg-white/85" : ""}>
+                            Edit
+                          </SecondaryButton>
+                          <DangerButton type="button" onClick={() => deleteRecipe(recipe.id)} className={recipeViewMode === "picture" && recipe.imageUrl ? "bg-white/85" : ""}>
+                            Delete
+                          </DangerButton>
+                        </div>
+                      </div>
+                      <div className={`mt-4 space-y-3 text-sm ${recipeViewMode === "picture" ? (recipe.imageUrl ? "rounded-[1.25rem] bg-black/35 p-4 text-white/95 backdrop-blur-[2px]" : "rounded-[1.25rem] bg-white/80 p-4 text-slate-700" ) : "text-slate-700"}`}>
+                        <p><span className={`font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white" : "text-kitchen-moss") : "text-kitchen-moss"}`}>Ingredients:</span> {recipe.ingredients}</p>
+                        <p><span className={`font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white" : "text-kitchen-moss") : "text-kitchen-moss"}`}>Steps:</span> {recipe.steps}</p>
+                        <p><span className={`font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white" : "text-kitchen-moss") : "text-kitchen-moss"}`}>Notes:</span> {recipe.notes || "None"}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {recipe.tags.length > 0 ? recipe.tags.map((tag) => (
+                            <span key={tag} className={`rounded-full px-3 py-1 text-xs font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "bg-white/20 text-white backdrop-blur-sm" : "bg-kitchen-sage text-kitchen-moss") : "bg-kitchen-sage text-kitchen-moss"}`}>
+                              {tag}
+                            </span>
+                          )) : <span className={`text-xs ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white/75" : "text-slate-500") : "text-slate-500"}`}>No tags</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+
+            <Panel title="Recently Deleted Recipes">
+              {deletedRecipes.length === 0 ? (
+                <EmptyState text="No deleted recipes right now." />
+              ) : (
+                <div className="space-y-3">
+                  {deletedRecipes.map((recipe) => (
+                    <div key={recipe.id} className="flex items-center justify-between gap-3 rounded-2xl bg-kitchen-cream px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-kitchen-moss">{recipe.recipeName}</p>
+                        <p className="text-sm text-slate-600">{recipe.category} • {recipe.prepTime || "No time set"}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <SecondaryButton type="button" onClick={() => restoreRecipe(recipe.id)}>
+                          Restore
+                        </SecondaryButton>
+                        <DangerButton type="button" onClick={() => permanentlyDeleteRecipe(recipe.id)}>
+                          Delete Forever
+                        </DangerButton>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </section>
+        )}
+
+        {activeTab === "inventory" && (
+          <section className="space-y-6">
+            <Panel
+              title={editingInventoryId ? "Edit Inventory Item" : "Add New Inventory"}
+              action={
+                <SecondaryButton type="button" onClick={() => setIsInventoryFormOpen((current) => !current)}>
+                  {isInventoryFormOpen ? "Hide Form" : editingInventoryId ? "Open Form" : "Add Inventory"}
+                </SecondaryButton>
+              }
+            >
+              {isInventoryFormOpen ? (
+                <form onSubmit={saveInventory} className="grid gap-4 md:grid-cols-2">
+                  <InputField label="Item Name" value={inventoryForm.itemName} onChange={(value) => setInventoryForm({ ...inventoryForm, itemName: value })} required />
+                  <SelectField label="Category" value={inventoryForm.category} onChange={(value) => setInventoryForm({ ...inventoryForm, category: value })} options={INVENTORY_CATEGORIES} placeholder="Select a category" required />
+                  <InputField label="Quantity" type="number" value={inventoryForm.quantity} onChange={(value) => setInventoryForm({ ...inventoryForm, quantity: value })} placeholder="Enter quantity" required />
+                  <SelectField label="Unit" value={inventoryForm.unit} onChange={(value) => setInventoryForm({ ...inventoryForm, unit: value })} options={UNIT_OPTIONS} placeholder="Select a unit" />
+                  <InputField label="Low Stock Threshold" type="number" value={inventoryForm.threshold} onChange={(value) => setInventoryForm({ ...inventoryForm, threshold: value })} required />
+                  <SelectField label="Priority" value={inventoryForm.priority} onChange={(value) => setInventoryForm({ ...inventoryForm, priority: value })} options={PRIORITY_OPTIONS} />
+                  <TextAreaField label="Notes" value={inventoryForm.notes} onChange={(value) => setInventoryForm({ ...inventoryForm, notes: value })} />
+                  <div className="md:col-span-2 flex flex-wrap gap-3">
+                    <PrimaryButton>{editingInventoryId ? "Update Item" : "Save Item"}</PrimaryButton>
+                    {editingInventoryId && (
+                      <SecondaryButton type="button" onClick={resetInventoryForm}>
+                        Cancel
+                      </SecondaryButton>
+                    )}
+                  </div>
+                </form>
+              ) : (
+                <p className="text-sm text-slate-600">Open this section when you want to add or edit kitchen inventory.</p>
+              )}
+            </Panel>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              {inventoryWithStatus.map((item) => (
+                <article key={item.id} className="rounded-[1.75rem] border border-kitchen-sage bg-white p-5 shadow-soft">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-xl font-semibold">{item.itemName}</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {item.category} • {item.quantity} {item.unit}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <PriorityBadge priority={item.priority} />
+                      <StatusBadge status={item.status} />
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-700">{item.notes || "No notes"}</p>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Low stock threshold: {item.threshold}
+                  </p>
+                  <div className="mt-4 flex gap-2">
+                    <SecondaryButton type="button" onClick={() => startInventoryEdit(item)}>
+                      Edit
+                    </SecondaryButton>
+                    <DangerButton type="button" onClick={() => deleteInventory(item.id)}>
+                      Delete
+                    </DangerButton>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeTab === "grocery" && (
+          <section className="space-y-6">
+            <Panel
+              title={editingGroceryId ? "Edit Grocery Item" : "Add New Grocery Item"}
+              action={
+                <div className="flex flex-wrap gap-2">
+                  <SecondaryButton type="button" onClick={() => setIsGroceryFormOpen((current) => !current)}>
+                    {isGroceryFormOpen ? "Hide Form" : editingGroceryId ? "Open Form" : "Add Grocery"}
+                  </SecondaryButton>
+                  <PrimaryButton type="button" onClick={addLowStockItemsToGrocery}>
+                    Sync Pantry Alerts
+                  </PrimaryButton>
+                </div>
+              }
+            >
+              {isGroceryFormOpen ? (
+                <form onSubmit={saveGrocery} className="grid gap-4 md:grid-cols-2">
+                  <InputField label="Item Name" value={groceryForm.itemName} onChange={(value) => setGroceryForm({ ...groceryForm, itemName: value })} required />
+                  <InputField label="Quantity" type="number" value={groceryForm.quantity} onChange={(value) => setGroceryForm({ ...groceryForm, quantity: value })} placeholder="Enter quantity" required />
+                  <SelectField label="Unit" value={groceryForm.unit} onChange={(value) => setGroceryForm({ ...groceryForm, unit: value })} options={UNIT_OPTIONS} placeholder="Select a unit" />
+                  <SelectField label="Category" value={groceryForm.category} onChange={(value) => setGroceryForm({ ...groceryForm, category: value })} options={GROCERY_CATEGORIES} placeholder="Select a category" required />
+                  <SelectField label="Priority" value={groceryForm.priority} onChange={(value) => setGroceryForm({ ...groceryForm, priority: value })} options={PRIORITY_OPTIONS} />
+                  <label className="md:col-span-2 flex items-center gap-3 rounded-2xl border border-kitchen-sage bg-kitchen-cream px-4 py-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={groceryForm.bought}
+                      onChange={(event) => setGroceryForm({ ...groceryForm, bought: event.target.checked })}
+                      className="h-4 w-4"
+                    />
+                    Bought already
+                  </label>
+                  <div className="md:col-span-2 flex flex-wrap gap-3">
+                    <PrimaryButton>{editingGroceryId ? "Update Grocery Item" : "Save Grocery Item"}</PrimaryButton>
+                    {editingGroceryId && (
+                      <SecondaryButton type="button" onClick={resetGroceryForm}>
+                        Cancel
+                      </SecondaryButton>
+                    )}
+                  </div>
+                </form>
+              ) : (
+                <p className="text-sm text-slate-600">Open this section when you want to add or edit a grocery item.</p>
+              )}
+            </Panel>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              {grocery.filter((item) => !item.suppressed).map((item) => (
+                <article key={item.id} className="rounded-[1.75rem] border border-kitchen-sage bg-white p-5 shadow-soft">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-xl font-semibold">{item.itemName}</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {item.quantity} {item.unit} • {item.category}
+                      </p>
+                      <div className="mt-2">
+                        <PriorityBadge priority={item.priority} />
+                      </div>
+                      {item.source === "low-stock" && (
+                        <p className="mt-2 text-xs font-medium uppercase tracking-[0.15em] text-kitchen-leaf">
+                          Added from pantry alert
+                        </p>
+                      )}
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={item.bought}
+                        onChange={() => toggleGroceryBought(item.id)}
+                        className="h-4 w-4"
+                      />
+                      Bought
+                    </label>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <SecondaryButton type="button" onClick={() => startGroceryEdit(item)}>
+                      Edit
+                    </SecondaryButton>
+                    <SecondaryButton type="button" onClick={() => markRestocked(item)}>
+                      Restocked
+                    </SecondaryButton>
+                    <button
+                      type="button"
+                      onClick={() => deleteGrocery(item.id)}
+                      className="rounded-full bg-kitchen-blush px-4 py-2 text-sm font-medium text-kitchen-moss transition hover:opacity-90"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DashboardCard({ title, count, note }) {
+  return (
+    <article className="rounded-[1.75rem] border border-kitchen-sage bg-white p-5 shadow-soft">
+      <p className="text-sm text-slate-600">{title}</p>
+      <p className="mt-3 text-3xl font-semibold">{count}</p>
+      <p className="mt-2 text-xs uppercase tracking-[0.16em] text-kitchen-leaf">{note}</p>
+    </article>
+  );
+}
+
+function MiniStat({ label, value, total = 0, tone = "inStock" }) {
+  const percent = total > 0 ? Math.round((value / total) * 100) : 0;
+  const barStyles = {
+    inStock: "bg-[linear-gradient(90deg,_rgba(126,164,120,0.92),_rgba(165,198,157,0.95))]",
+    lowStock: "bg-[linear-gradient(90deg,_rgba(245,158,11,0.92),_rgba(252,211,77,0.95))]",
+    finished: "bg-[linear-gradient(90deg,_rgba(239,68,68,0.9),_rgba(248,113,113,0.95))]"
+  };
+
+  return (
+    <div className="rounded-[1.4rem] border border-kitchen-sage/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95),_rgba(236,231,223,0.8))] px-4 py-4 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-slate-700">{label}</span>
+        <span className="text-sm font-semibold text-kitchen-moss">{value} • {percent}%</span>
+      </div>
+      <div className="h-2.5 overflow-hidden rounded-full bg-white/85 ring-1 ring-kitchen-sage/30">
+        <div
+          className={`h-full rounded-full transition-all ${barStyles[tone] || barStyles.inStock}`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Panel({ title, action, children }) {
+  return (
+    <section className="rounded-[1.75rem] border border-kitchen-sage/80 bg-white/95 p-5 shadow-soft backdrop-blur-sm">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-xl font-semibold">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function StatusBadge({ status }) {
+  const styles = {
+    "Finished": "bg-kitchen-blush text-kitchen-moss",
+    "Low Stock": "bg-amber-100 text-amber-800",
+    "In Stock": "bg-kitchen-sage text-kitchen-moss"
+  };
+
+  return (
+    <span className={`rounded-full px-3 py-1 text-xs font-medium ${styles[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+function ListRow({ title, detail, action }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-kitchen-cream px-4 py-3">
+      <div>
+        <p className="text-sm font-medium text-kitchen-moss">{title}</p>
+        <p className="text-sm text-slate-600">{detail}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function PriorityBadge({ priority }) {
+  const styles = {
+    "Critical": "bg-red-100 text-red-800",
+    "Essential": "bg-amber-100 text-amber-800",
+    "Nice to Have": "bg-sky-100 text-sky-800",
+    "Optional": "bg-slate-100 text-slate-700"
+  };
+
+  return (
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${styles[priority] || styles["Nice to Have"]}`}>
+      {priority}
+    </span>
+  );
+}
+
+function UrgencyBar({ percent, tone }) {
+  const toneStyles = {
+    critical: "bg-red-500",
+    high: "bg-orange-500",
+    medium: "bg-amber-400",
+    low: "bg-kitchen-leaf"
+  };
+
+  return (
+    <div className="w-full rounded-full bg-slate-200">
+      <div
+        className={`h-2 rounded-full transition-all ${toneStyles[tone] || toneStyles.low}`}
+        style={{ width: `${Math.max(percent, 6)}%` }}
+      />
+    </div>
+  );
+}
+
+function UrgencyRow({ item, detail }) {
+  return (
+    <div className="rounded-[1.4rem] border border-white/70 bg-[linear-gradient(135deg,_rgba(255,255,255,0.96),_rgba(247,247,243,0.92))] px-4 py-4 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-kitchen-moss">{item.itemName}</p>
+            <PriorityBadge priority={item.priority} />
+            <StatusBadge status={item.status} />
+          </div>
+          <p className="mt-1 text-sm text-slate-600">{detail}</p>
+        </div>
+        <div className="w-full max-w-xs sm:w-56">
+          <div className="mb-1 flex items-center justify-between text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+            <span>{item.itemName}</span>
+            <span>{item.stockPercent}%</span>
+          </div>
+          <UrgencyBar percent={item.stockPercent} tone={item.urgencyTone} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShoppingSignalCard({ signal, alertCount, criticalCount }) {
+  const styles = {
+    critical: "border-red-200 bg-[linear-gradient(135deg,_rgba(254,226,226,0.95),_rgba(255,255,255,0.9))] text-red-900",
+    high: "border-orange-200 bg-[linear-gradient(135deg,_rgba(255,237,213,0.95),_rgba(255,255,255,0.9))] text-orange-900",
+    medium: "border-amber-200 bg-[linear-gradient(135deg,_rgba(254,249,195,0.95),_rgba(255,255,255,0.9))] text-amber-900",
+    low: "border-kitchen-sage bg-[linear-gradient(135deg,_rgba(219,229,218,0.75),_rgba(255,255,255,0.92))] text-kitchen-moss"
+  };
+
+  return (
+    <div className={`rounded-[1.75rem] border px-5 py-5 shadow-sm ${styles[signal.tone] || styles.low}`}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em]">{signal.label}</p>
+          <p className="mt-2 text-sm">{signal.message}</p>
+        </div>
+        <div className="text-sm font-medium">
+          <p>{alertCount} pantry alert{alertCount !== 1 ? "s" : ""}</p>
+          <p>{criticalCount} critical item{criticalCount !== 1 ? "s" : ""}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InputField({ label, value, onChange, type = "text", placeholder = "", required = false }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-medium">{label}</span>
+      <input
+        type={type}
+        value={value}
+        required={required}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-2xl border border-kitchen-sage bg-kitchen-cream px-4 py-3 text-sm outline-none transition focus:border-kitchen-leaf"
+      />
+    </label>
+  );
+}
+
+function TextAreaField({ label, value, onChange, required = false }) {
+  return (
+    <label className="block md:col-span-2">
+      <span className="mb-2 block text-sm font-medium">{label}</span>
+      <textarea
+        rows="4"
+        value={value}
+        required={required}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-2xl border border-kitchen-sage bg-kitchen-cream px-4 py-3 text-sm outline-none transition focus:border-kitchen-leaf"
+      />
+    </label>
+  );
+}
+
+function SelectField({ label, value, onChange, options, placeholder = "", required = false }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-medium">{label}</span>
+      <select
+        value={value}
+        required={required}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-2xl border border-kitchen-sage bg-kitchen-cream px-4 py-3 text-sm outline-none transition focus:border-kitchen-leaf"
+      >
+        {placeholder ? (
+          <option value="" disabled>
+            {placeholder}
+          </option>
+        ) : null}
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SimpleList({ items, emptyText, renderItem }) {
+  if (!items.length) {
+    return <EmptyState text={emptyText} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((item) => (
+        <div key={item.id}>
+          {renderItem(item)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ text }) {
+  return (
+    <div className="rounded-[1.75rem] border border-dashed border-kitchen-sage bg-white p-6 text-sm text-slate-500">
+      {text}
+    </div>
+  );
+}
+
+function PrimaryButton({ children, className = "", ...props }) {
+  return (
+    <button
+      {...props}
+      className={`rounded-full bg-kitchen-leaf px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryButton({ children, className = "", ...props }) {
+  return (
+    <button
+      {...props}
+      className={`rounded-full bg-kitchen-sand px-4 py-2 text-sm font-medium text-kitchen-moss transition hover:bg-kitchen-sage ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function DangerButton({ children, className = "", ...props }) {
+  return (
+    <button
+      {...props}
+      className={`rounded-full bg-kitchen-blush px-4 py-2 text-sm font-medium text-kitchen-moss transition hover:opacity-90 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
