@@ -570,17 +570,52 @@ function mergeSeedRecipes(existingRecipes, seedRecipes) {
   return [...existingRecipes, ...missingSeeds];
 }
 
+function normalizeThresholdMode(mode) {
+  return String(mode || "").toLowerCase() === "units" ? "units" : "percent";
+}
+
+function roundInventoryValue(value) {
+  return Number(Number(value || 0).toFixed(1));
+}
+
 function normalizeInventory(data) {
-  return data.map((item) => ({
-    id: item.id || crypto.randomUUID(),
-    itemName: item.itemName || item.name || "",
-    category: item.category || "General",
-    quantity: Number(item.quantity || 0),
-    unit: item.unit || "item",
-    threshold: Number(item.threshold || item.lowStockThreshold || 0),
-    notes: item.notes || "",
-    priority: normalizePriority(item.priority)
-  }));
+  return data.map((item) => {
+    const quantity = Number(item.quantity || 0);
+    const threshold = Number(item.threshold || item.lowStockThreshold || 0);
+    const desiredAmount = Number(item.desiredAmount || item.desired_amount || 0);
+    const normalizedDesiredAmount =
+      desiredAmount > 0
+        ? desiredAmount
+        : threshold > 0
+          ? Math.max(Math.ceil(threshold / 0.25), threshold + 1, quantity, 1)
+          : Math.max(Math.ceil(quantity), 1);
+    const thresholdMode = normalizeThresholdMode(item.thresholdMode || item.threshold_mode);
+    const thresholdPercent =
+      thresholdMode === "percent"
+        ? Number(item.thresholdPercent || item.threshold_percent || 25)
+        : normalizedDesiredAmount > 0
+          ? roundInventoryValue((threshold / normalizedDesiredAmount) * 100)
+          : 25;
+
+    return {
+      id: item.id || crypto.randomUUID(),
+      itemName: item.itemName || item.name || "",
+      category: item.category || "General",
+      quantity,
+      unit: item.unit || "item",
+      threshold,
+      desiredAmount: normalizedDesiredAmount,
+      thresholdMode,
+      thresholdPercent: Math.max(0, thresholdPercent),
+      notes: item.notes || "",
+      priority: normalizePriority(item.priority),
+      tags: Array.isArray(item.tags)
+        ? item.tags
+        : typeof item.tags === "string"
+          ? item.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
+          : []
+    };
+  });
 }
 
 function normalizeGrocery(data) {
@@ -600,7 +635,7 @@ function normalizeGrocery(data) {
 
 function getStatus(item) {
   const quantity = Number(item.quantity);
-  const threshold = Number(item.threshold);
+  const threshold = getEffectiveThreshold(item);
 
   if (quantity === 0) return "Finished";
   if (quantity <= threshold) return "Low Stock";
@@ -619,13 +654,76 @@ function getPriorityWeight(priority) {
   return weights[normalizedPriority] || 2;
 }
 
-function getStockPercent(item) {
+function getDesiredQuantity(item) {
+  const desiredAmount = Number(item.desiredAmount || 0);
   const quantity = Number(item.quantity || 0);
   const threshold = Number(item.threshold || 0);
+
+  if (desiredAmount > 0) return desiredAmount;
+  if (threshold <= 0) return Math.max(Math.ceil(quantity), 1);
+  return Math.max(Math.ceil(threshold / 0.25), threshold + 1, quantity, 1);
+}
+
+function getEffectiveThreshold(item) {
+  const desiredQuantity = getDesiredQuantity(item);
+  const thresholdMode = normalizeThresholdMode(item.thresholdMode);
+  const thresholdPercent = Number(item.thresholdPercent || 0);
+  const thresholdUnits = Number(item.threshold || 0);
+
+  if (thresholdMode === "percent") {
+    return roundInventoryValue((desiredQuantity * thresholdPercent) / 100);
+  }
+
+  return thresholdUnits;
+}
+
+function getThresholdPercent(item) {
+  const desiredQuantity = getDesiredQuantity(item);
+  const threshold = getEffectiveThreshold(item);
+
+  if (desiredQuantity <= 0) return 0;
+  return roundInventoryValue((threshold / desiredQuantity) * 100);
+}
+
+function getInventoryLevelPercent(item) {
+  const quantity = Number(item.quantity || 0);
+  const desiredQuantity = getDesiredQuantity(item);
+
+  if (desiredQuantity <= 0) return 0;
+  return Math.max(0, Math.round((quantity / desiredQuantity) * 100));
+}
+
+function getInventoryDisplayPercent(item) {
+  return Math.max(0, Math.min(110, getInventoryLevelPercent(item)));
+}
+
+function getThresholdMarkerPercent(item) {
+  const threshold = getEffectiveThreshold(item);
+  const desiredQuantity = getDesiredQuantity(item);
+
+  if (threshold <= 0 || desiredQuantity <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((threshold / desiredQuantity) * 100)));
+}
+
+function getStockPercent(item) {
+  const quantity = Number(item.quantity || 0);
+  const threshold = getEffectiveThreshold(item);
 
   if (quantity <= 0) return 0;
   if (threshold <= 0) return 100;
   return Math.max(0, Math.min(100, Math.round((quantity / threshold) * 100)));
+}
+
+function getInventoryLevelTone(item) {
+  const quantity = Number(item.quantity || 0);
+  const threshold = getEffectiveThreshold(item);
+  const levelPercent = getInventoryLevelPercent(item);
+
+  if (quantity <= 0) return "empty";
+  if (threshold > 0 && quantity <= threshold) return levelPercent <= 15 ? "critical" : "below-threshold";
+  if (levelPercent < 70) return "caution";
+  if (levelPercent > 100) return "over";
+  return "healthy";
 }
 
 function getUrgencyTone(item) {
@@ -697,9 +795,13 @@ function emptyInventory() {
     category: "",
     quantity: "",
     unit: "",
+    desiredAmount: "",
+    thresholdMode: "percent",
+    thresholdPercent: 25,
     threshold: 0,
     notes: "",
-    priority: "Essential"
+    priority: "Essential",
+    tags: ""
   };
 }
 
@@ -738,9 +840,13 @@ function inventoryToRow(item, householdId) {
     category: item.category,
     quantity: Number(item.quantity || 0),
     unit: item.unit,
-    low_stock_threshold: Number(item.threshold || 0),
+    low_stock_threshold: Number(getEffectiveThreshold(item) || 0),
+    desired_amount: Number(item.desiredAmount || 0),
+    threshold_mode: normalizeThresholdMode(item.thresholdMode),
+    threshold_percent: Number(item.thresholdPercent || 25),
     notes: item.notes,
-    priority: normalizePriority(item.priority)
+    priority: normalizePriority(item.priority),
+    tags: item.tags || []
   };
 }
 
@@ -818,6 +924,73 @@ function getRecipeInventoryMatches(recipe, inventoryItems) {
   return matches;
 }
 
+function toSearchText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function toTitleCase(value) {
+  return String(value || "")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function splitIngredientSuggestions(ingredientsText) {
+  return String(ingredientsText || "")
+    .split(/[\n,]/)
+    .map((token) => normalizeIngredientToken(token))
+    .filter(Boolean)
+    .map(toTitleCase);
+}
+
+function getRecipeSearchBlob(recipe) {
+  return [recipe.recipeName, recipe.ingredients, ...(recipe.tags || [])].join(" ").toLowerCase();
+}
+
+function getRecipeExcludeTerms(recipe) {
+  return Array.from(new Set([
+    recipe.recipeName,
+    ...(recipe.tags || []),
+    ...splitIngredientSuggestions(recipe.ingredients)
+  ].map((term) => String(term || "").trim()).filter(Boolean)));
+}
+
+function getInventorySearchBlob(item) {
+  return [item.itemName, item.category, ...(item.tags || [])].join(" ").toLowerCase();
+}
+
+function getInventoryExcludeTerms(item) {
+  return Array.from(new Set([
+    item.itemName,
+    item.category,
+    ...(item.tags || [])
+  ].map((term) => String(term || "").trim()).filter(Boolean)));
+}
+
+function matchesExcludedTerms(blob, excludedTerms) {
+  if (!excludedTerms.length) return false;
+  return excludedTerms.some((term) => blob.includes(toSearchText(term)));
+}
+
+function addUniqueFilterTerm(currentTerms, nextTerm) {
+  const cleaned = String(nextTerm || "").trim();
+  if (!cleaned) return currentTerms;
+  return currentTerms.some((term) => toSearchText(term) === toSearchText(cleaned))
+    ? currentTerms
+    : [...currentTerms, cleaned];
+}
+
+function removeFilterTerm(currentTerms, termToRemove) {
+  return currentTerms.filter((term) => toSearchText(term) !== toSearchText(termToRemove));
+}
+
+function getSuggestedGroceryQuantity(item) {
+  const desiredQuantity = getDesiredQuantity(item);
+  const quantity = Number(item.quantity || 0);
+  return Math.max(roundInventoryValue(desiredQuantity - quantity), 1);
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [recipes, setRecipes] = useState(() =>
@@ -839,6 +1012,7 @@ function App() {
   const [householdId, setHouseholdId] = useState(null);
   const [isHydratingData, setIsHydratingData] = useState(false);
   const [hasRemoteDataLoaded, setHasRemoteDataLoaded] = useState(false);
+  const [remoteLoadError, setRemoteLoadError] = useState("");
   const [authForm, setAuthForm] = useState({ email: "", password: "" });
 
   const [recipeForm, setRecipeForm] = useState(emptyRecipe());
@@ -854,10 +1028,21 @@ function App() {
   const [isGroceryFormOpen, setIsGroceryFormOpen] = useState(false);
   const [focusedRecipeId, setFocusedRecipeId] = useState(null);
   const [menuSearchFilter, setMenuSearchFilter] = useState("");
+  const [menuSearchTerms, setMenuSearchTerms] = useState([]);
   const [menuCategoryFilter, setMenuCategoryFilter] = useState("All");
+  const [menuExcludeInput, setMenuExcludeInput] = useState("");
+  const [menuExcludedTerms, setMenuExcludedTerms] = useState([]);
   const [recipeCategoryFilter, setRecipeCategoryFilter] = useState("All");
   const [recipeTagFilter, setRecipeTagFilter] = useState("All");
   const [recipeSearchFilter, setRecipeSearchFilter] = useState("");
+  const [recipeSearchTerms, setRecipeSearchTerms] = useState([]);
+  const [recipeExcludeInput, setRecipeExcludeInput] = useState("");
+  const [recipeExcludedTerms, setRecipeExcludedTerms] = useState([]);
+  const [inventorySearchFilter, setInventorySearchFilter] = useState("");
+  const [inventorySearchTerms, setInventorySearchTerms] = useState([]);
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState("All");
+  const [inventoryExcludeInput, setInventoryExcludeInput] = useState("");
+  const [inventoryExcludedTerms, setInventoryExcludedTerms] = useState([]);
   const [isShoppingSignalOpen, setIsShoppingSignalOpen] = useState(true);
   const [isLowAlertsOpen, setIsLowAlertsOpen] = useState(true);
 
@@ -891,6 +1076,7 @@ function App() {
       setHouseholdId(null);
       setHasRemoteDataLoaded(false);
       setIsHydratingData(false);
+      setRemoteLoadError("");
       return;
     }
 
@@ -899,126 +1085,142 @@ function App() {
     async function hydrateFromSupabase() {
       setIsHydratingData(true);
       setHasRemoteDataLoaded(false);
+      setRemoteLoadError("");
 
-      const { data: profile, error: profileError } = await supabaseClient
-        .from("profiles")
-        .select("household_id")
-        .eq("id", currentUser.id)
-        .single();
+      try {
+        const { data: profile, error: profileError } = await supabaseClient
+          .from("profiles")
+          .select("household_id")
+          .eq("id", currentUser.id)
+          .single();
 
-      if (!isMounted) return;
+        if (!isMounted) return;
 
-      if (profileError || !profile?.household_id) {
-        console.error("Unable to load household profile", profileError);
-        alert("We could not load your household data from Supabase yet.");
-        setHouseholdId(null);
-        setIsHydratingData(false);
-        return;
-      }
-
-      const nextHouseholdId = profile.household_id;
-      setHouseholdId(nextHouseholdId);
-
-      const [recipesResponse, inventoryResponse, groceryResponse] = await Promise.all([
-        supabaseClient
-          .from("recipes")
-          .select("id, recipe_name, category, difficulty, prep_time, ingredients, steps, notes, image_url, tags")
-          .eq("household_id", nextHouseholdId)
-          .order("created_at", { ascending: false }),
-        supabaseClient
-          .from("inventory_items")
-          .select("id, item_name, category, quantity, unit, low_stock_threshold, notes, priority")
-          .eq("household_id", nextHouseholdId)
-          .order("created_at", { ascending: false }),
-        supabaseClient
-          .from("grocery_items")
-          .select("id, item_name, quantity, unit, category, bought, source, linked_inventory_id, suppressed, priority")
-          .eq("household_id", nextHouseholdId)
-          .order("created_at", { ascending: false })
-      ]);
-
-      if (!isMounted) return;
-
-      if (recipesResponse.error || inventoryResponse.error || groceryResponse.error) {
-        console.error("Unable to load Supabase household data", recipesResponse.error || inventoryResponse.error || groceryResponse.error);
-        alert("We could not load your shared household data from Supabase.");
-        setIsHydratingData(false);
-        return;
-      }
-
-      const remoteRecipes = normalizeRecipes((recipesResponse.data || []).map((recipe) => ({
-        id: recipe.id,
-        recipeName: recipe.recipe_name,
-        category: recipe.category,
-        difficulty: recipe.difficulty,
-        prepTime: recipe.prep_time,
-        ingredients: recipe.ingredients,
-        steps: recipe.steps,
-        notes: recipe.notes,
-        imageUrl: recipe.image_url || "",
-        tags: recipe.tags || []
-      })));
-      const remoteInventory = normalizeInventory((inventoryResponse.data || []).map((item) => ({
-        id: item.id,
-        itemName: item.item_name,
-        category: item.category,
-        quantity: item.quantity,
-        unit: item.unit,
-        threshold: item.low_stock_threshold,
-        notes: item.notes,
-        priority: item.priority
-      })));
-      const remoteGrocery = normalizeGrocery((groceryResponse.data || []).map((item) => ({
-        id: item.id,
-        itemName: item.item_name,
-        quantity: item.quantity,
-        unit: item.unit,
-        category: item.category,
-        bought: item.bought,
-        source: item.source,
-        linkedInventoryId: item.linked_inventory_id,
-        suppressed: item.suppressed,
-        priority: item.priority
-      })));
-
-      const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0;
-
-      if (!hasRemoteData) {
-        const seededRecipes = mergeSeedRecipes(recipes, normalizeRecipes(defaultRecipes));
-        const seededInventory = inventory;
-        const seededGrocery = grocery;
-
-        const seedResponses = await Promise.all([
-          seededRecipes.length
-            ? supabaseClient.from("recipes").insert(seededRecipes.map((recipe) => recipeToRow(recipe, nextHouseholdId)))
-            : Promise.resolve({ error: null }),
-          seededInventory.length
-            ? supabaseClient.from("inventory_items").insert(seededInventory.map((item) => inventoryToRow(item, nextHouseholdId)))
-            : Promise.resolve({ error: null }),
-          seededGrocery.length
-            ? supabaseClient.from("grocery_items").insert(seededGrocery.map((item) => groceryToRow(item, nextHouseholdId)))
-            : Promise.resolve({ error: null })
-        ]);
-
-        const seedError = seedResponses.find((response) => response?.error)?.error;
-        if (seedError) {
-          console.error("Unable to seed Supabase household data", seedError);
-          alert("We could not seed your starting household data into Supabase.");
+        if (profileError || !profile?.household_id) {
+          console.error("Unable to load household profile", profileError);
+          setHouseholdId(null);
+          setRemoteLoadError("We could not load your household data from Supabase yet.");
+          setHasRemoteDataLoaded(true);
           setIsHydratingData(false);
           return;
         }
 
-        setRecipes(seededRecipes);
-        setInventory(seededInventory);
-        setGrocery(seededGrocery);
-      } else {
-        setRecipes(mergeSeedRecipes(remoteRecipes, normalizeRecipes(defaultRecipes)));
-        setInventory(remoteInventory);
-        setGrocery(remoteGrocery);
-      }
+        const nextHouseholdId = profile.household_id;
+        setHouseholdId(nextHouseholdId);
 
-      setHasRemoteDataLoaded(true);
-      setIsHydratingData(false);
+        const [recipesResponse, inventoryResponse, groceryResponse] = await Promise.all([
+          supabaseClient
+            .from("recipes")
+            .select("id, recipe_name, category, difficulty, prep_time, ingredients, steps, notes, image_url, tags")
+            .eq("household_id", nextHouseholdId)
+            .order("created_at", { ascending: false }),
+          supabaseClient
+            .from("inventory_items")
+            .select("id, item_name, category, quantity, unit, low_stock_threshold, desired_amount, threshold_mode, threshold_percent, notes, priority, tags")
+            .eq("household_id", nextHouseholdId)
+            .order("created_at", { ascending: false }),
+          supabaseClient
+            .from("grocery_items")
+            .select("id, item_name, quantity, unit, category, bought, source, linked_inventory_id, suppressed, priority")
+            .eq("household_id", nextHouseholdId)
+            .order("created_at", { ascending: false })
+        ]);
+
+        if (!isMounted) return;
+
+        if (recipesResponse.error || inventoryResponse.error || groceryResponse.error) {
+          console.error("Unable to load Supabase household data", recipesResponse.error || inventoryResponse.error || groceryResponse.error);
+          setRemoteLoadError("We could not load your shared household data from Supabase.");
+          setHasRemoteDataLoaded(true);
+          setIsHydratingData(false);
+          return;
+        }
+
+        const remoteRecipes = normalizeRecipes((recipesResponse.data || []).map((recipe) => ({
+          id: recipe.id,
+          recipeName: recipe.recipe_name,
+          category: recipe.category,
+          difficulty: recipe.difficulty,
+          prepTime: recipe.prep_time,
+          ingredients: recipe.ingredients,
+          steps: recipe.steps,
+          notes: recipe.notes,
+          imageUrl: recipe.image_url || "",
+          tags: recipe.tags || []
+        })));
+        const remoteInventory = normalizeInventory((inventoryResponse.data || []).map((item) => ({
+          id: item.id,
+          itemName: item.item_name,
+          category: item.category,
+          quantity: item.quantity,
+          unit: item.unit,
+          threshold: item.low_stock_threshold,
+          desiredAmount: item.desired_amount,
+          thresholdMode: item.threshold_mode,
+          thresholdPercent: item.threshold_percent,
+          notes: item.notes,
+          priority: item.priority,
+          tags: item.tags || []
+        })));
+        const remoteGrocery = normalizeGrocery((groceryResponse.data || []).map((item) => ({
+          id: item.id,
+          itemName: item.item_name,
+          quantity: item.quantity,
+          unit: item.unit,
+          category: item.category,
+          bought: item.bought,
+          source: item.source,
+          linkedInventoryId: item.linked_inventory_id,
+          suppressed: item.suppressed,
+          priority: item.priority
+        })));
+
+        const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0;
+
+        if (!hasRemoteData) {
+          const seededRecipes = mergeSeedRecipes(recipes, normalizeRecipes(defaultRecipes));
+          const seededInventory = inventory;
+          const seededGrocery = grocery;
+
+          const seedResponses = await Promise.all([
+            seededRecipes.length
+              ? supabaseClient.from("recipes").insert(seededRecipes.map((recipe) => recipeToRow(recipe, nextHouseholdId)))
+              : Promise.resolve({ error: null }),
+            seededInventory.length
+              ? supabaseClient.from("inventory_items").insert(seededInventory.map((item) => inventoryToRow(item, nextHouseholdId)))
+              : Promise.resolve({ error: null }),
+            seededGrocery.length
+              ? supabaseClient.from("grocery_items").insert(seededGrocery.map((item) => groceryToRow(item, nextHouseholdId)))
+              : Promise.resolve({ error: null })
+          ]);
+
+          const seedError = seedResponses.find((response) => response?.error)?.error;
+          if (seedError) {
+            console.error("Unable to seed Supabase household data", seedError);
+            setRemoteLoadError("We could not seed your starting household data into Supabase.");
+            setHasRemoteDataLoaded(true);
+            setIsHydratingData(false);
+            return;
+          }
+
+          setRecipes(seededRecipes);
+          setInventory(seededInventory);
+          setGrocery(seededGrocery);
+        } else {
+          setRecipes(mergeSeedRecipes(remoteRecipes, normalizeRecipes(defaultRecipes)));
+          setInventory(remoteInventory);
+          setGrocery(remoteGrocery);
+        }
+
+        setHasRemoteDataLoaded(true);
+        setIsHydratingData(false);
+      } catch (error) {
+        if (!isMounted) return;
+        console.error("Unexpected Supabase hydration error", error);
+        setRemoteLoadError("We hit an unexpected loading issue while connecting to Supabase.");
+        setHasRemoteDataLoaded(true);
+        setIsHydratingData(false);
+      }
     }
 
     hydrateFromSupabase();
@@ -1080,13 +1282,27 @@ function App() {
       const status = getStatus(item);
       const stockPercent = getStockPercent(item);
       const urgencyTone = getUrgencyTone({ ...item, status });
+      const desiredQuantity = getDesiredQuantity(item);
+      const inventoryLevelPercent = getInventoryLevelPercent(item);
+      const inventoryDisplayPercent = getInventoryDisplayPercent(item);
+      const thresholdMarkerPercent = getThresholdMarkerPercent(item);
+      const inventoryLevelTone = getInventoryLevelTone(item);
+      const effectiveThreshold = getEffectiveThreshold(item);
+      const effectiveThresholdPercent = getThresholdPercent(item);
       return {
         ...item,
         priority: normalizePriority(item.priority),
         status,
         stockPercent,
         urgencyTone,
-        priorityWeight: getPriorityWeight(item.priority)
+        priorityWeight: getPriorityWeight(item.priority),
+        desiredQuantity,
+        inventoryLevelPercent,
+        inventoryDisplayPercent,
+        thresholdMarkerPercent,
+        inventoryLevelTone,
+        effectiveThreshold,
+        effectiveThresholdPercent
       };
     }),
     [inventory]
@@ -1137,19 +1353,83 @@ function App() {
     [recipes]
   );
 
+  const inventoryCategories = useMemo(
+    () => ["All", ...new Set(inventoryWithStatus.map((item) => item.category).filter(Boolean))],
+    [inventoryWithStatus]
+  );
+
+  const menuSearchSuggestions = useMemo(() => {
+    const searchText = toSearchText(menuSearchFilter);
+    if (!searchText) return [];
+
+    return Array.from(new Set(recipes.flatMap((recipe) => getRecipeExcludeTerms(recipe))))
+      .filter((term) => toSearchText(term).includes(searchText))
+      .filter((term) => !menuSearchTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
+      .slice(0, 8);
+  }, [recipes, menuSearchFilter, menuSearchTerms]);
+
+  const recipeSearchSuggestions = useMemo(() => {
+    const searchText = toSearchText(recipeSearchFilter);
+    if (!searchText) return [];
+
+    return Array.from(new Set(recipes.flatMap((recipe) => getRecipeExcludeTerms(recipe))))
+      .filter((term) => toSearchText(term).includes(searchText))
+      .filter((term) => !recipeSearchTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
+      .slice(0, 8);
+  }, [recipes, recipeSearchFilter, recipeSearchTerms]);
+
+  const inventorySearchSuggestions = useMemo(() => {
+    const searchText = toSearchText(inventorySearchFilter);
+    if (!searchText) return [];
+
+    return Array.from(new Set(inventoryWithStatus.flatMap((item) => getInventoryExcludeTerms(item))))
+      .filter((term) => toSearchText(term).includes(searchText))
+      .filter((term) => !inventorySearchTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
+      .slice(0, 8);
+  }, [inventoryWithStatus, inventorySearchFilter, inventorySearchTerms]);
+
+  const menuExcludeSuggestions = useMemo(() => {
+    const searchText = toSearchText(menuExcludeInput);
+    if (!searchText) return [];
+
+    return Array.from(new Set(recipes.flatMap((recipe) => getRecipeExcludeTerms(recipe))))
+      .filter((term) => toSearchText(term).includes(searchText))
+      .filter((term) => !menuExcludedTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
+      .slice(0, 8);
+  }, [recipes, menuExcludeInput, menuExcludedTerms]);
+
+  const recipeExcludeSuggestions = useMemo(() => {
+    const searchText = toSearchText(recipeExcludeInput);
+    if (!searchText) return [];
+
+    return Array.from(new Set(recipes.flatMap((recipe) => getRecipeExcludeTerms(recipe))))
+      .filter((term) => toSearchText(term).includes(searchText))
+      .filter((term) => !recipeExcludedTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
+      .slice(0, 8);
+  }, [recipes, recipeExcludeInput, recipeExcludedTerms]);
+
+  const inventoryExcludeSuggestions = useMemo(() => {
+    const searchText = toSearchText(inventoryExcludeInput);
+    if (!searchText) return [];
+
+    return Array.from(new Set(inventoryWithStatus.flatMap((item) => getInventoryExcludeTerms(item))))
+      .filter((term) => toSearchText(term).includes(searchText))
+      .filter((term) => !inventoryExcludedTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
+      .slice(0, 8);
+  }, [inventoryWithStatus, inventoryExcludeInput, inventoryExcludedTerms]);
+
   const filteredMenuRecipes = useMemo(
     () =>
       recipes.filter((recipe) => {
         const categoryMatch = menuCategoryFilter === "All" || recipe.category === menuCategoryFilter;
-        const searchText = menuSearchFilter.trim().toLowerCase();
-        const searchMatch =
-          !searchText ||
-          recipe.recipeName.toLowerCase().includes(searchText) ||
-          recipe.ingredients.toLowerCase().includes(searchText) ||
-          recipe.tags.some((tag) => tag.toLowerCase().includes(searchText));
-        return categoryMatch && searchMatch;
+        const searchText = toSearchText(menuSearchFilter);
+        const searchBlob = getRecipeSearchBlob(recipe);
+        const searchMatch = !searchText || searchBlob.includes(searchText);
+        const chipMatch = menuSearchTerms.every((term) => searchBlob.includes(toSearchText(term)));
+        const excluded = matchesExcludedTerms(searchBlob, menuExcludedTerms);
+        return categoryMatch && searchMatch && chipMatch && !excluded;
       }),
-    [recipes, menuCategoryFilter, menuSearchFilter]
+    [recipes, menuCategoryFilter, menuSearchFilter, menuSearchTerms, menuExcludedTerms]
   );
 
   const chopboardSelectionMap = useMemo(
@@ -1161,28 +1441,32 @@ function App() {
     const filtered = recipes.filter((recipe) => {
       const categoryMatch = recipeCategoryFilter === "All" || recipe.category === recipeCategoryFilter;
       const tagMatch = recipeTagFilter === "All" || recipe.tags.includes(recipeTagFilter);
-      const searchText = recipeSearchFilter.trim().toLowerCase();
-      const searchMatch =
-        !searchText ||
-        [
-          recipe.recipeName,
-          recipe.ingredients,
-          recipe.steps,
-          recipe.notes,
-          recipe.category,
-          ...(recipe.tags || [])
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(searchText);
-      return categoryMatch && tagMatch && searchMatch;
+      const searchText = toSearchText(recipeSearchFilter);
+      const searchBlob = getRecipeSearchBlob(recipe);
+      const searchMatch = !searchText || searchBlob.includes(searchText);
+      const chipMatch = recipeSearchTerms.every((term) => searchBlob.includes(toSearchText(term)));
+      const excluded = matchesExcludedTerms(searchBlob, recipeExcludedTerms);
+      return categoryMatch && tagMatch && searchMatch && chipMatch && !excluded;
     });
 
     if (!focusedRecipeId) return filtered;
     const focused = filtered.find((recipe) => recipe.id === focusedRecipeId);
     if (!focused) return filtered;
     return [focused, ...filtered.filter((recipe) => recipe.id !== focusedRecipeId)];
-  }, [recipes, focusedRecipeId, recipeCategoryFilter, recipeTagFilter, recipeSearchFilter]);
+  }, [recipes, focusedRecipeId, recipeCategoryFilter, recipeTagFilter, recipeSearchFilter, recipeSearchTerms, recipeExcludedTerms]);
+
+  const filteredInventoryItems = useMemo(
+    () => inventoryWithStatus.filter((item) => {
+      const categoryMatch = inventoryCategoryFilter === "All" || item.category === inventoryCategoryFilter;
+      const searchText = toSearchText(inventorySearchFilter);
+      const searchBlob = getInventorySearchBlob(item);
+      const searchMatch = !searchText || searchBlob.includes(searchText);
+      const chipMatch = inventorySearchTerms.every((term) => searchBlob.includes(toSearchText(term)));
+      const excluded = matchesExcludedTerms(searchBlob, inventoryExcludedTerms);
+      return categoryMatch && searchMatch && chipMatch && !excluded;
+    }),
+    [inventoryWithStatus, inventoryCategoryFilter, inventorySearchFilter, inventorySearchTerms, inventoryExcludedTerms]
+  );
 
   const chopboardSessionItems = useMemo(
     () =>
@@ -1209,13 +1493,6 @@ function App() {
   const chopboardReducibleCount = chopboardSessionItems.reduce((total, item) => total + item.reducibleInventoryItems.length, 0);
 
   const lowStockSuggestions = useMemo(() => {
-    const activeGroceryLinks = new Set(
-      grocery
-        .filter((item) => !item.bought)
-        .map((item) => item.linkedInventoryId)
-        .filter(Boolean)
-    );
-
     const suppressedLinks = new Set(
       grocery
         .filter((item) => item.suppressed)
@@ -1223,28 +1500,58 @@ function App() {
         .filter(Boolean)
     );
 
-    return alertItems.filter(
-      (item) => !activeGroceryLinks.has(item.id) && !suppressedLinks.has(item.id)
-    );
+    return alertItems.filter((item) => !suppressedLinks.has(item.id));
   }, [alertItems, grocery]);
 
   useEffect(() => {
-    if (lowStockSuggestions.length === 0) return;
+    if (!alertItems.length) return;
 
     setGrocery((current) => {
+      const alertMap = new Map(alertItems.map((item) => [item.id, item]));
+      let changed = false;
+
+      const next = current.map((item) => {
+        if (item.source !== "low-stock" || !item.linkedInventoryId || item.bought || item.suppressed) {
+          return item;
+        }
+
+        const alertItem = alertMap.get(item.linkedInventoryId);
+        if (!alertItem) return item;
+
+        const suggestedQuantity = getSuggestedGroceryQuantity(alertItem);
+        if (
+          Number(item.quantity) === suggestedQuantity &&
+          item.unit === (alertItem.unit || "item") &&
+          item.category === (alertItem.category || "Pantry") &&
+          item.priority === (alertItem.priority || "Essential")
+        ) {
+          return item;
+        }
+
+        changed = true;
+        return {
+          ...item,
+          itemName: alertItem.itemName,
+          quantity: suggestedQuantity,
+          unit: alertItem.unit || "item",
+          category: alertItem.category || "Pantry",
+          priority: alertItem.priority || "Essential"
+        };
+      });
+
       const activeLinks = new Set(
-        current.filter((item) => !item.bought).map((item) => item.linkedInventoryId).filter(Boolean)
+        next.filter((item) => !item.suppressed).map((item) => item.linkedInventoryId).filter(Boolean)
       );
       const suppressedLinks = new Set(
-        current.filter((item) => item.suppressed).map((item) => item.linkedInventoryId).filter(Boolean)
+        next.filter((item) => item.suppressed).map((item) => item.linkedInventoryId).filter(Boolean)
       );
 
-      const additions = lowStockSuggestions
+      const additions = alertItems
         .filter((item) => !activeLinks.has(item.id) && !suppressedLinks.has(item.id))
         .map((item) => ({
           id: crypto.randomUUID(),
           itemName: item.itemName,
-          quantity: Math.max(item.threshold || 1, 1),
+          quantity: getSuggestedGroceryQuantity(item),
           unit: item.unit || "item",
           category: item.category || "Pantry",
           bought: false,
@@ -1254,10 +1561,10 @@ function App() {
           priority: item.priority || "Essential"
         }));
 
-      if (!additions.length) return current;
-      return [...additions, ...current];
+      if (!changed && !additions.length) return current;
+      return [...additions, ...next];
     });
-  }, [lowStockSuggestions]);
+  }, [alertItems]);
 
   useEffect(() => {
     setGrocery((current) => {
@@ -1378,11 +1685,31 @@ function App() {
       alert("Please choose a category for the inventory item.");
       return;
     }
+    if (Number(inventoryForm.desiredAmount) <= 0) {
+      alert("Please set the desired amount for this inventory item.");
+      return;
+    }
+
+    const normalizedThresholdMode = normalizeThresholdMode(inventoryForm.thresholdMode);
+    const desiredAmount = Number(inventoryForm.desiredAmount);
+    const thresholdPercent = normalizedThresholdMode === "percent"
+      ? Math.max(0, Number(inventoryForm.thresholdPercent || 0))
+      : desiredAmount > 0
+        ? roundInventoryValue((Number(inventoryForm.threshold || 0) / desiredAmount) * 100)
+        : 0;
+    const thresholdUnits = normalizedThresholdMode === "percent"
+      ? roundInventoryValue((desiredAmount * thresholdPercent) / 100)
+      : Number(inventoryForm.threshold || 0);
+
     const normalized = {
       ...inventoryForm,
       quantity: Number(inventoryForm.quantity),
-      threshold: Number(inventoryForm.threshold),
-      priority: inventoryForm.priority || "Essential"
+      desiredAmount,
+      thresholdMode: normalizedThresholdMode,
+      thresholdPercent,
+      threshold: thresholdUnits,
+      priority: inventoryForm.priority || "Essential",
+      tags: inventoryForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
     };
 
     if (editingInventoryId) {
@@ -1409,8 +1736,12 @@ function App() {
                 quantity: Number(item.quantity || 0) + Number(normalized.quantity || 0),
                 unit: normalized.unit || item.unit,
                 threshold: Math.max(Number(item.threshold || 0), Number(normalized.threshold || 0)),
+                desiredAmount: normalized.desiredAmount || item.desiredAmount,
+                thresholdMode: normalized.thresholdMode || item.thresholdMode,
+                thresholdPercent: normalized.thresholdPercent || item.thresholdPercent,
                 notes: normalized.notes || item.notes,
-                priority: normalized.priority || item.priority
+                priority: normalized.priority || item.priority,
+                tags: Array.from(new Set([...(item.tags || []), ...(normalized.tags || [])]))
               }
             : item
         );
@@ -1489,9 +1820,13 @@ function App() {
       category: item.category,
       quantity: item.quantity,
       unit: item.unit,
+      desiredAmount: item.desiredAmount,
+      thresholdMode: item.thresholdMode || "percent",
+      thresholdPercent: item.thresholdPercent ?? 25,
       threshold: item.threshold,
       notes: item.notes,
-      priority: item.priority || "Essential"
+      priority: item.priority || "Essential",
+      tags: (item.tags || []).join(", ")
     });
     setIsInventoryFormOpen(true);
     setActiveTab("inventory");
@@ -1561,17 +1896,31 @@ function App() {
 
   function addSingleLowStockItem(item) {
     setGrocery((current) => {
-      const exists = current.some(
-        (entry) => entry.linkedInventoryId === item.id && !entry.bought
-      );
+      const existing = current.find((entry) => entry.linkedInventoryId === item.id);
 
-      if (exists) return current;
+      if (existing) {
+        return current.map((entry) =>
+          entry.id === existing.id
+            ? {
+                ...entry,
+                itemName: item.itemName,
+                quantity: getSuggestedGroceryQuantity(item),
+                unit: item.unit || "item",
+                category: item.category || "Pantry",
+                priority: item.priority || "Essential",
+                bought: false,
+                suppressed: false,
+                source: "low-stock"
+              }
+            : entry
+        );
+      }
 
       return [
         {
           id: crypto.randomUUID(),
           itemName: item.itemName,
-          quantity: Math.max(item.threshold || 1, 1),
+          quantity: getSuggestedGroceryQuantity(item),
           unit: item.unit || "item",
           category: item.category || "Pantry",
           bought: false,
@@ -1586,7 +1935,7 @@ function App() {
   }
 
   function addLowStockItemsToGrocery() {
-    lowStockSuggestions.forEach(addSingleLowStockItem);
+    alertItems.forEach(addSingleLowStockItem);
     setActiveTab("grocery");
   }
 
@@ -1594,13 +1943,18 @@ function App() {
     setGrocery((current) =>
       current.map((item) => {
         if (item.id !== id) return item;
-
-        if (!item.bought && item.linkedInventoryId) {
-          return { ...item, bought: true, suppressed: true };
-        }
-
         return { ...item, bought: !item.bought };
       })
+    );
+  }
+
+  function updateGroceryQuantity(id, nextQuantity) {
+    setGrocery((current) =>
+      current.map((item) =>
+        item.id === id
+          ? { ...item, quantity: Math.max(Number(nextQuantity) || 0, 0) }
+          : item
+      )
     );
   }
 
@@ -1618,9 +1972,13 @@ function App() {
             category: groceryItem.category || "General",
             quantity: Math.max(Number(groceryItem.quantity) || 1, 1),
             unit: groceryItem.unit || "item",
-            threshold: 1,
+            desiredAmount: Math.max(Number(groceryItem.quantity) || 1, 1),
+            thresholdMode: "percent",
+            thresholdPercent: 25,
+            threshold: roundInventoryValue(Math.max(Number(groceryItem.quantity) || 1, 1) * 0.25),
             notes: "Restocked from grocery",
-            priority: groceryItem.priority || "Essential"
+            priority: groceryItem.priority || "Essential",
+            tags: []
           },
           ...current
         ];
@@ -1760,6 +2118,11 @@ function App() {
               <p className="text-sm text-slate-600 sm:text-base">
                 Loading your shared household recipes, inventory, and grocery list from Supabase.
               </p>
+              {remoteLoadError ? (
+                <div className="rounded-[1.25rem] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {remoteLoadError}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -2006,14 +2369,10 @@ function App() {
                     items={grocery.filter((item) => !item.bought && !item.suppressed).sort((a, b) => getPriorityWeight(b.priority) - getPriorityWeight(a.priority))}
                     emptyText="Your grocery list is clear."
                     renderItem={(item) => (
-                      <ListRow
-                        title={item.itemName}
-                        detail={`${item.quantity} ${item.unit} • ${item.category} • ${item.priority}`}
-                        action={
-                          <SecondaryButton type="button" onClick={() => markRestocked(item)}>
-                            Restock to Inventory
-                          </SecondaryButton>
-                        }
+                      <DashboardGroceryRow
+                        item={item}
+                        onQuantityChange={updateGroceryQuantity}
+                        onRestock={markRestocked}
                       />
                     )}
                   />
@@ -2034,8 +2393,29 @@ function App() {
               }
             >
               <div className="grid gap-4 md:grid-cols-2">
-                <InputField label="Search Menu" value={menuSearchFilter} onChange={setMenuSearchFilter} placeholder="Soup, noodles, chicken..." />
+                <SearchFilterField
+                  label="Search Menu"
+                  value={menuSearchFilter}
+                  onChange={setMenuSearchFilter}
+                  suggestions={menuSearchSuggestions}
+                  selectedValues={menuSearchTerms}
+                  onAdd={(term) => setMenuSearchTerms((current) => addUniqueFilterTerm(current, term))}
+                  onRemove={(term) => setMenuSearchTerms((current) => removeFilterTerm(current, term))}
+                  placeholder="Soup, noodles, chicken..."
+                />
                 <SelectField label="Category" value={menuCategoryFilter} onChange={setMenuCategoryFilter} options={recipeCategories} />
+              </div>
+              <div className="mt-4">
+                <ExcludeFilterField
+                  label="Exclude From Menu"
+                  value={menuExcludeInput}
+                  onChange={setMenuExcludeInput}
+                  suggestions={menuExcludeSuggestions}
+                  selectedValues={menuExcludedTerms}
+                  onAdd={(term) => setMenuExcludedTerms((current) => addUniqueFilterTerm(current, term))}
+                  onRemove={(term) => setMenuExcludedTerms((current) => removeFilterTerm(current, term))}
+                  placeholder="Exclude an ingredient, tag, or dish name"
+                />
               </div>
               <p className="mt-3 text-sm text-slate-600">Use this page when you just want to decide what to eat. Open a recipe when you want the full ingredients and steps.</p>
             </Panel>
@@ -2267,9 +2647,30 @@ function App() {
 
             <Panel title="Filter Recipes">
               <div className="grid gap-4 md:grid-cols-3">
-                <InputField label="Search Recipes" value={recipeSearchFilter} onChange={setRecipeSearchFilter} placeholder="Chicken, soup, oats..." />
+                <SearchFilterField
+                  label="Search Recipes"
+                  value={recipeSearchFilter}
+                  onChange={setRecipeSearchFilter}
+                  suggestions={recipeSearchSuggestions}
+                  selectedValues={recipeSearchTerms}
+                  onAdd={(term) => setRecipeSearchTerms((current) => addUniqueFilterTerm(current, term))}
+                  onRemove={(term) => setRecipeSearchTerms((current) => removeFilterTerm(current, term))}
+                  placeholder="Chicken, soup, oats..."
+                />
                 <SelectField label="Category" value={recipeCategoryFilter} onChange={setRecipeCategoryFilter} options={recipeCategories} />
                 <SelectField label="Tag" value={recipeTagFilter} onChange={setRecipeTagFilter} options={recipeTags} />
+              </div>
+              <div className="mt-4">
+                <ExcludeFilterField
+                  label="Exclude From Recipes"
+                  value={recipeExcludeInput}
+                  onChange={setRecipeExcludeInput}
+                  suggestions={recipeExcludeSuggestions}
+                  selectedValues={recipeExcludedTerms}
+                  onAdd={(term) => setRecipeExcludedTerms((current) => addUniqueFilterTerm(current, term))}
+                  onRemove={(term) => setRecipeExcludedTerms((current) => removeFilterTerm(current, term))}
+                  placeholder="Exclude an ingredient, tag, or recipe name"
+                />
               </div>
             </Panel>
 
@@ -2390,8 +2791,31 @@ function App() {
                   <SelectField label="Category" value={inventoryForm.category} onChange={(value) => setInventoryForm({ ...inventoryForm, category: value })} options={INVENTORY_CATEGORIES} placeholder="Select a category" required />
                   <InputField label="Quantity" type="number" value={inventoryForm.quantity} onChange={(value) => setInventoryForm({ ...inventoryForm, quantity: value })} placeholder="Enter quantity" required />
                   <SelectField label="Unit" value={inventoryForm.unit} onChange={(value) => setInventoryForm({ ...inventoryForm, unit: value })} options={UNIT_OPTIONS} placeholder="Select a unit" />
-                  <InputField label="Low Stock Threshold" type="number" value={inventoryForm.threshold} onChange={(value) => setInventoryForm({ ...inventoryForm, threshold: value })} required />
+                  <InputField label="Desired Amount (100%)" type="number" value={inventoryForm.desiredAmount} onChange={(value) => setInventoryForm({ ...inventoryForm, desiredAmount: value })} placeholder="Target pantry level" required />
+                  <SelectField label="Threshold Type" value={inventoryForm.thresholdMode} onChange={(value) => setInventoryForm({ ...inventoryForm, thresholdMode: value })} options={["percent", "units"]} />
+                  {inventoryForm.thresholdMode === "percent" ? (
+                    <>
+                      <InputField label="Low Stock Threshold (%)" type="number" value={inventoryForm.thresholdPercent} onChange={(value) => setInventoryForm({ ...inventoryForm, thresholdPercent: value })} placeholder="25" required />
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-medium">Threshold Preview (Units)</span>
+                        <div className="w-full rounded-2xl border border-kitchen-sage bg-kitchen-cream px-4 py-3 text-sm text-slate-600">
+                          {roundInventoryValue((Number(inventoryForm.desiredAmount || 0) * Number(inventoryForm.thresholdPercent || 0)) / 100)} {inventoryForm.unit || "item"}
+                        </div>
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <InputField label="Low Stock Threshold (Units)" type="number" value={inventoryForm.threshold} onChange={(value) => setInventoryForm({ ...inventoryForm, threshold: value })} placeholder="Enter threshold units" required />
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-medium">Threshold Preview (%)</span>
+                        <div className="w-full rounded-2xl border border-kitchen-sage bg-kitchen-cream px-4 py-3 text-sm text-slate-600">
+                          {Number(inventoryForm.desiredAmount || 0) > 0 ? roundInventoryValue((Number(inventoryForm.threshold || 0) / Number(inventoryForm.desiredAmount || 1)) * 100) : 0}%
+                        </div>
+                      </label>
+                    </>
+                  )}
                   <SelectField label="Priority" value={inventoryForm.priority} onChange={(value) => setInventoryForm({ ...inventoryForm, priority: value })} options={PRIORITY_OPTIONS} />
+                  <InputField label="Tags" value={inventoryForm.tags} onChange={(value) => setInventoryForm({ ...inventoryForm, tags: value })} placeholder="Staple, Breakfast, Protein" />
                   <TextAreaField label="Notes" value={inventoryForm.notes} onChange={(value) => setInventoryForm({ ...inventoryForm, notes: value })} />
                   <div className="md:col-span-2 flex flex-wrap gap-3">
                     <PrimaryButton>{editingInventoryId ? "Update Item" : "Save Item"}</PrimaryButton>
@@ -2407,8 +2831,36 @@ function App() {
               )}
             </Panel>
 
+            <Panel title="Find Inventory Items">
+              <div className="grid gap-4 md:grid-cols-2">
+                <SearchFilterField
+                  label="Search Inventory"
+                  value={inventorySearchFilter}
+                  onChange={setInventorySearchFilter}
+                  suggestions={inventorySearchSuggestions}
+                  selectedValues={inventorySearchTerms}
+                  onAdd={(term) => setInventorySearchTerms((current) => addUniqueFilterTerm(current, term))}
+                  onRemove={(term) => setInventorySearchTerms((current) => removeFilterTerm(current, term))}
+                  placeholder="Eggs, Produce, Breakfast..."
+                />
+                <SelectField label="Category" value={inventoryCategoryFilter} onChange={setInventoryCategoryFilter} options={inventoryCategories} />
+              </div>
+              <div className="mt-4">
+                <ExcludeFilterField
+                  label="Exclude From Inventory"
+                  value={inventoryExcludeInput}
+                  onChange={setInventoryExcludeInput}
+                  suggestions={inventoryExcludeSuggestions}
+                  selectedValues={inventoryExcludedTerms}
+                  onAdd={(term) => setInventoryExcludedTerms((current) => addUniqueFilterTerm(current, term))}
+                  onRemove={(term) => setInventoryExcludedTerms((current) => removeFilterTerm(current, term))}
+                  placeholder="Exclude an item name, category, or tag"
+                />
+              </div>
+            </Panel>
+
             <div className="grid gap-4 lg:grid-cols-2">
-              {inventoryWithStatus.map((item) => (
+              {filteredInventoryItems.map((item) => (
                 <article key={item.id} className="rounded-[1.75rem] border border-kitchen-sage bg-white p-5 shadow-soft">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -2416,6 +2868,13 @@ function App() {
                       <p className="mt-1 text-sm text-slate-600">
                         {item.category} • {item.quantity} {item.unit}
                       </p>
+                      {item.tags?.length ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {item.tags.map((tag) => (
+                            <span key={tag} className="rounded-full bg-kitchen-sage px-3 py-1 text-xs font-medium text-kitchen-moss">{tag}</span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <PriorityBadge priority={item.priority} />
@@ -2423,9 +2882,9 @@ function App() {
                     </div>
                   </div>
                   <p className="mt-3 text-sm text-slate-700">{item.notes || "No notes"}</p>
-                  <p className="mt-2 text-sm text-slate-600">
-                    Low stock threshold: {item.threshold}
-                  </p>
+                  <div className="mt-4">
+                    <InventoryLevelGraph item={item} />
+                  </div>
                   <div className="mt-4 flex gap-2">
                     <SecondaryButton type="button" onClick={() => startInventoryEdit(item)}>
                       Edit
@@ -2503,14 +2962,13 @@ function App() {
                         </p>
                       )}
                     </div>
-                    <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <label className="flex items-center text-sm text-slate-600" aria-label={`Toggle ${item.itemName} bought`}>
                       <input
                         type="checkbox"
                         checked={item.bought}
                         onChange={() => toggleGroceryBought(item.id)}
                         className="h-4 w-4"
                       />
-                      Bought
                     </label>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
@@ -2567,6 +3025,68 @@ function MiniStat({ label, value, total = 0, tone = "inStock" }) {
           className={`h-full rounded-full transition-all ${barStyles[tone] || barStyles.inStock}`}
           style={{ width: `${percent}%` }}
         />
+      </div>
+    </div>
+  );
+}
+
+function InventoryLevelGraph({ item }) {
+  const toneStyles = {
+    healthy: "bg-[linear-gradient(90deg,_rgba(99,151,102,0.95),_rgba(163,201,142,0.95))]",
+    caution: "bg-[linear-gradient(90deg,_rgba(245,158,11,0.95),_rgba(251,191,36,0.95))]",
+    "below-threshold": "bg-[linear-gradient(90deg,_rgba(249,115,22,0.96),_rgba(251,146,60,0.95))]",
+    critical: "bg-[linear-gradient(90deg,_rgba(220,38,38,0.98),_rgba(248,113,113,0.95))]",
+    empty: "bg-[linear-gradient(90deg,_rgba(127,29,29,0.98),_rgba(239,68,68,0.95))]",
+    over: "bg-[linear-gradient(90deg,_rgba(14,116,144,0.96),_rgba(56,189,248,0.95))]"
+  };
+
+  const statusCopy = {
+    healthy: "Healthy level",
+    caution: "Below ideal level",
+    "below-threshold": "Below low-stock threshold",
+    critical: "Near depletion",
+    empty: "Finished",
+    over: "Over target"
+  };
+
+  return (
+    <div className="rounded-[1.35rem] border border-kitchen-sage/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.98),_rgba(244,249,242,0.9))] px-4 py-4 shadow-sm">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kitchen-leaf">Stock Level</p>
+          <p className="mt-1 text-sm text-slate-600">{statusCopy[item.inventoryLevelTone] || "Healthy level"}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-semibold text-kitchen-moss">{item.inventoryLevelPercent}%</p>
+          <p className="text-xs text-slate-500">Target {item.desiredQuantity} {item.unit}</p>
+        </div>
+      </div>
+
+      <div className="relative pt-5">
+        <div className="absolute left-0 right-0 top-0 flex justify-between text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+          <span>0%</span>
+          <span>100%</span>
+          <span>110%</span>
+        </div>
+        <div className="relative h-4 overflow-visible rounded-full bg-slate-200/90 ring-1 ring-kitchen-sage/25">
+          <div className="absolute inset-y-0 right-[9%] w-px bg-white/90" />
+          <div className="absolute inset-y-[-4px] left-[90.5%] w-px bg-kitchen-moss/35" />
+          {item.threshold > 0 ? (
+            <div
+              className="absolute inset-y-[-5px] w-[2px] rounded-full bg-red-500/80"
+              style={{ left: `${Math.min(item.thresholdMarkerPercent, 100)}%` }}
+            />
+          ) : null}
+          <div
+            className={`h-full rounded-full transition-all ${toneStyles[item.inventoryLevelTone] || toneStyles.healthy}`}
+            style={{ width: `${Math.max(item.inventoryDisplayPercent, item.quantity > 0 ? 4 : 0)}%` }}
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+          <span>Current: {item.quantity} {item.unit}</span>
+          <span>Threshold: {item.effectiveThreshold} {item.unit} • {item.effectiveThresholdPercent}%</span>
+          <span>Desired: {item.desiredQuantity} {item.unit}</span>
+        </div>
       </div>
     </div>
   );
@@ -2629,6 +3149,56 @@ function ListRow({ title, detail, action }) {
         <p className="text-sm text-slate-600">{detail}</p>
       </div>
       {action}
+    </div>
+  );
+}
+
+function DashboardGroceryRow({ item, onQuantityChange, onRestock }) {
+  const numericQuantity = Number(item.quantity) || 0;
+
+  return (
+    <div className="rounded-[1.4rem] border border-white/70 bg-[linear-gradient(135deg,_rgba(255,255,255,0.96),_rgba(247,247,243,0.92))] px-4 py-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-kitchen-moss">{item.itemName}</p>
+            <PriorityBadge priority={item.priority} />
+          </div>
+          <p className="mt-1 text-sm text-slate-600">{item.category} • {item.unit}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex items-center overflow-hidden rounded-full border border-kitchen-sage bg-white shadow-sm">
+            <button
+              type="button"
+              onClick={() => onQuantityChange(item.id, Math.max(numericQuantity - 1, 0))}
+              className="px-3 py-2 text-sm font-semibold text-kitchen-moss transition hover:bg-kitchen-sage/70"
+              aria-label={`Decrease ${item.itemName} quantity`}
+            >
+              -
+            </button>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={item.quantity}
+              onChange={(event) => onQuantityChange(item.id, event.target.value)}
+              className="w-14 border-x border-kitchen-sage bg-transparent px-2 py-2 text-center text-sm font-medium outline-none"
+              aria-label={`${item.itemName} quantity`}
+            />
+            <button
+              type="button"
+              onClick={() => onQuantityChange(item.id, numericQuantity + 1)}
+              className="px-3 py-2 text-sm font-semibold text-kitchen-moss transition hover:bg-kitchen-sage/70"
+              aria-label={`Increase ${item.itemName} quantity`}
+            >
+              +
+            </button>
+          </div>
+          <SecondaryButton type="button" onClick={() => onRestock(item)}>
+            Restock to Inventory
+          </SecondaryButton>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2767,6 +3337,120 @@ function SelectField({ label, value, onChange, options, placeholder = "", requir
         ))}
       </select>
     </label>
+  );
+}
+
+function SearchFilterField({ label, value, onChange, suggestions, selectedValues, onAdd, onRemove, placeholder }) {
+  return (
+    <div className="space-y-3">
+      <label className="block">
+        <span className="mb-2 block text-sm font-medium">{label}</span>
+        <input
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (suggestions[0]) {
+                onAdd(suggestions[0]);
+                onChange("");
+              }
+            }
+          }}
+          className="w-full rounded-2xl border border-kitchen-sage bg-kitchen-cream px-4 py-3 text-sm outline-none transition focus:border-kitchen-leaf"
+        />
+      </label>
+      {selectedValues.length ? (
+        <div className="flex flex-wrap gap-2">
+          {selectedValues.map((term) => (
+            <button
+              key={term}
+              type="button"
+              onClick={() => onRemove(term)}
+              className="rounded-full border border-kitchen-sage bg-white px-3 py-1.5 text-xs font-medium text-kitchen-moss transition hover:bg-kitchen-sage"
+            >
+              {term} ×
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {value && suggestions.length ? (
+        <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-kitchen-sage/60 bg-white px-3 py-3">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => {
+                onAdd(suggestion);
+                onChange("");
+              }}
+              className="rounded-full bg-kitchen-cream px-3 py-1.5 text-xs font-medium text-kitchen-moss transition hover:bg-kitchen-sage"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ExcludeFilterField({ label, value, onChange, suggestions, selectedValues, onAdd, onRemove, placeholder }) {
+  return (
+    <div className="space-y-3">
+      <label className="block">
+        <span className="mb-2 block text-sm font-medium">{label}</span>
+        <input
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (suggestions[0]) {
+                onAdd(suggestions[0]);
+                onChange("");
+              }
+            }
+          }}
+          className="w-full rounded-2xl border border-kitchen-sage bg-kitchen-cream px-4 py-3 text-sm outline-none transition focus:border-kitchen-leaf"
+        />
+      </label>
+      {selectedValues.length ? (
+        <div className="flex flex-wrap gap-2">
+          {selectedValues.map((term) => (
+            <button
+              key={term}
+              type="button"
+              onClick={() => onRemove(term)}
+              className="rounded-full border border-kitchen-sage bg-white px-3 py-1.5 text-xs font-medium text-kitchen-moss transition hover:bg-kitchen-sage"
+            >
+              {term} ×
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {value && suggestions.length ? (
+        <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-kitchen-sage/60 bg-white px-3 py-3">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => {
+                onAdd(suggestion);
+                onChange("");
+              }}
+              className="rounded-full bg-kitchen-cream px-3 py-1.5 text-xs font-medium text-kitchen-moss transition hover:bg-kitchen-sage"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
