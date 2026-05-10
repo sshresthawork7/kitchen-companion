@@ -7,6 +7,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 const STORAGE_KEYS = {
   recipes: "kitchen-companion-recipes-v4",
   deletedRecipes: "kitchen-companion-deleted-recipes-v1",
+  deletedInventory: "kitchen-companion-deleted-inventory-v1",
   inventory: "kitchen-companion-inventory-v5",
   grocery: "kitchen-companion-grocery-v5",
   chopboard: "kitchen-companion-chopboard-v1"
@@ -53,6 +54,7 @@ const UNIT_OPTIONS = [
   "bag",
   "carton",
   "bottle",
+  "gallon",
   "can",
   "jar",
   "box",
@@ -1000,6 +1002,7 @@ function App() {
     )
   );
   const [deletedRecipes, setDeletedRecipes] = useState(() => normalizeRecipes(readStorage(STORAGE_KEYS.deletedRecipes, [])));
+  const [deletedInventory, setDeletedInventory] = useState(() => normalizeInventory(readStorage(STORAGE_KEYS.deletedInventory, [])));
   const [inventory, setInventory] = useState(() => normalizeInventory(readStorage(STORAGE_KEYS.inventory, defaultInventory)));
   const [grocery, setGrocery] = useState(() => normalizeGrocery(readStorage(STORAGE_KEYS.grocery, defaultGrocery)));
   const [chopboardItems, setChopboardItems] = useState(() => normalizeChopboardSession(readStorage(STORAGE_KEYS.chopboard, [])));
@@ -1048,6 +1051,9 @@ function App() {
 
   const previousAlertItemsRef = useRef(new Set());
   const remoteSyncTimeoutRef = useRef(null);
+  const recipeFormSectionRef = useRef(null);
+  const inventoryFormSectionRef = useRef(null);
+  const groceryFormSectionRef = useRef(null);
 
   useEffect(() => {
     supabaseClient.auth.getSession().then(({ data }) => {
@@ -1067,9 +1073,16 @@ function App() {
 
   useEffect(() => writeStorage(STORAGE_KEYS.recipes, recipes), [recipes]);
   useEffect(() => writeStorage(STORAGE_KEYS.deletedRecipes, deletedRecipes), [deletedRecipes]);
+  useEffect(() => writeStorage(STORAGE_KEYS.deletedInventory, deletedInventory), [deletedInventory]);
   useEffect(() => writeStorage(STORAGE_KEYS.inventory, inventory), [inventory]);
   useEffect(() => writeStorage(STORAGE_KEYS.grocery, grocery), [grocery]);
   useEffect(() => writeStorage(STORAGE_KEYS.chopboard, chopboardItems), [chopboardItems]);
+
+  function scrollToSection(sectionRef) {
+    requestAnimationFrame(() => {
+      sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   useEffect(() => {
     if (!currentUser) {
@@ -1417,6 +1430,17 @@ function App() {
       .filter((term) => !inventoryExcludedTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
       .slice(0, 8);
   }, [inventoryWithStatus, inventoryExcludeInput, inventoryExcludedTerms]);
+
+  const groceryItemSuggestions = useMemo(() => {
+    const searchText = toSearchText(groceryForm.itemName);
+    if (!searchText) return [];
+
+    return inventoryWithStatus
+      .filter((item) => toSearchText(item.itemName).includes(searchText))
+      .map((item) => item.itemName)
+      .filter((name, index, array) => array.findIndex((entry) => toSearchText(entry) === toSearchText(name)) === index)
+      .slice(0, 8);
+  }, [inventoryWithStatus, groceryForm.itemName]);
 
   const filteredMenuRecipes = useMemo(
     () =>
@@ -1811,6 +1835,7 @@ function App() {
     setRecipeForm({ ...recipe, tags: recipe.tags.join(", ") });
     setIsRecipeFormOpen(true);
     setActiveTab("recipes");
+    scrollToSection(recipeFormSectionRef);
   }
 
   function startInventoryEdit(item) {
@@ -1830,6 +1855,26 @@ function App() {
     });
     setIsInventoryFormOpen(true);
     setActiveTab("inventory");
+    scrollToSection(inventoryFormSectionRef);
+  }
+
+  function applyInventoryItemToGroceryForm(itemName) {
+    const matchedInventoryItem = inventoryWithStatus.find(
+      (item) => toSearchText(item.itemName) === toSearchText(itemName)
+    );
+
+    if (!matchedInventoryItem) {
+      setGroceryForm((current) => ({ ...current, itemName }));
+      return;
+    }
+
+    setGroceryForm((current) => ({
+      ...current,
+      itemName: matchedInventoryItem.itemName,
+      unit: matchedInventoryItem.unit || current.unit,
+      category: matchedInventoryItem.category || current.category,
+      priority: matchedInventoryItem.priority || current.priority
+    }));
   }
 
   function startGroceryEdit(item) {
@@ -1844,6 +1889,7 @@ function App() {
     });
     setIsGroceryFormOpen(true);
     setActiveTab("grocery");
+    scrollToSection(groceryFormSectionRef);
   }
 
   function deleteRecipe(id) {
@@ -1868,9 +1914,25 @@ function App() {
   }
 
   function deleteInventory(id) {
+    const target = inventory.find((item) => item.id === id);
+    if (!target) return;
+
+    setDeletedInventory((current) => [target, ...current.filter((item) => item.id !== id)]);
     setInventory((current) => current.filter((item) => item.id !== id));
     setGrocery((current) => current.filter((item) => item.linkedInventoryId !== id));
     if (editingInventoryId === id) resetInventoryForm();
+  }
+
+  function restoreInventory(id) {
+    const target = deletedInventory.find((item) => item.id === id);
+    if (!target) return;
+
+    setInventory((current) => [target, ...current.filter((item) => item.id !== id)]);
+    setDeletedInventory((current) => current.filter((item) => item.id !== id));
+  }
+
+  function permanentlyDeleteInventory(id) {
+    setDeletedInventory((current) => current.filter((item) => item.id !== id));
   }
 
   function deleteGrocery(id) {
@@ -2612,7 +2674,8 @@ function App() {
 
         {activeTab === "recipes" && (
           <section className="space-y-6">
-            <Panel
+            <div ref={recipeFormSectionRef}>
+              <Panel
               title={editingRecipeId ? "Edit Recipe" : "Add New Recipe"}
               action={
                 <SecondaryButton type="button" onClick={() => setIsRecipeFormOpen((current) => !current)}>
@@ -2644,6 +2707,7 @@ function App() {
                 <p className="text-sm text-slate-600">Open this section when you want to add or edit a recipe.</p>
               )}
             </Panel>
+            </div>
 
             <Panel title="Filter Recipes">
               <div className="grid gap-4 md:grid-cols-3">
@@ -2777,7 +2841,8 @@ function App() {
 
         {activeTab === "inventory" && (
           <section className="space-y-6">
-            <Panel
+            <div ref={inventoryFormSectionRef}>
+              <Panel
               title={editingInventoryId ? "Edit Inventory Item" : "Add New Inventory"}
               action={
                 <SecondaryButton type="button" onClick={() => setIsInventoryFormOpen((current) => !current)}>
@@ -2830,6 +2895,7 @@ function App() {
                 <p className="text-sm text-slate-600">Open this section when you want to add or edit kitchen inventory.</p>
               )}
             </Panel>
+            </div>
 
             <Panel title="Find Inventory Items">
               <div className="grid gap-4 md:grid-cols-2">
@@ -2896,12 +2962,38 @@ function App() {
                 </article>
               ))}
             </div>
+
+            <Panel title="Recently Deleted Inventory">
+              {deletedInventory.length === 0 ? (
+                <EmptyState text="No deleted inventory items right now." />
+              ) : (
+                <div className="space-y-3">
+                  {deletedInventory.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl bg-kitchen-cream px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-kitchen-moss">{item.itemName}</p>
+                        <p className="text-sm text-slate-600">{item.category} • {item.quantity} {item.unit}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <SecondaryButton type="button" onClick={() => restoreInventory(item.id)}>
+                          Restore
+                        </SecondaryButton>
+                        <DangerButton type="button" onClick={() => permanentlyDeleteInventory(item.id)}>
+                          Delete Forever
+                        </DangerButton>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
           </section>
         )}
 
         {activeTab === "grocery" && (
           <section className="space-y-6">
-            <Panel
+            <div ref={groceryFormSectionRef}>
+              <Panel
               title={editingGroceryId ? "Edit Grocery Item" : "Add New Grocery Item"}
               action={
                 <div className="flex flex-wrap gap-2">
@@ -2916,7 +3008,15 @@ function App() {
             >
               {isGroceryFormOpen ? (
                 <form onSubmit={saveGrocery} className="grid gap-4 md:grid-cols-2">
-                  <InputField label="Item Name" value={groceryForm.itemName} onChange={(value) => setGroceryForm({ ...groceryForm, itemName: value })} required />
+                  <SuggestInputField
+                    label="Item Name"
+                    value={groceryForm.itemName}
+                    onChange={(value) => setGroceryForm({ ...groceryForm, itemName: value })}
+                    onSelectSuggestion={applyInventoryItemToGroceryForm}
+                    suggestions={groceryItemSuggestions}
+                    placeholder="Search kitchen inventory items"
+                    required
+                  />
                   <InputField label="Quantity" type="number" value={groceryForm.quantity} onChange={(value) => setGroceryForm({ ...groceryForm, quantity: value })} placeholder="Enter quantity" required />
                   <SelectField label="Unit" value={groceryForm.unit} onChange={(value) => setGroceryForm({ ...groceryForm, unit: value })} options={UNIT_OPTIONS} placeholder="Select a unit" />
                   <SelectField label="Category" value={groceryForm.category} onChange={(value) => setGroceryForm({ ...groceryForm, category: value })} options={GROCERY_CATEGORIES} placeholder="Select a category" required />
@@ -2943,6 +3043,7 @@ function App() {
                 <p className="text-sm text-slate-600">Open this section when you want to add or edit a grocery item.</p>
               )}
             </Panel>
+            </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
               {grocery.filter((item) => !item.suppressed).map((item) => (
@@ -3049,6 +3150,11 @@ function InventoryLevelGraph({ item }) {
     over: "Over target"
   };
 
+  const maxGraphPercent = 110;
+  const hundredMarkerPercent = (100 / maxGraphPercent) * 100;
+  const barWidthPercent = Math.max((item.inventoryDisplayPercent / maxGraphPercent) * 100, item.quantity > 0 ? 4 : 0);
+  const thresholdMarkerLeft = Math.min((item.thresholdMarkerPercent / maxGraphPercent) * 100, hundredMarkerPercent);
+
   return (
     <div className="rounded-[1.35rem] border border-kitchen-sage/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.98),_rgba(244,249,242,0.9))] px-4 py-4 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
@@ -3069,17 +3175,17 @@ function InventoryLevelGraph({ item }) {
           <span>110%</span>
         </div>
         <div className="relative h-4 overflow-visible rounded-full bg-slate-200/90 ring-1 ring-kitchen-sage/25">
-          <div className="absolute inset-y-0 right-[9%] w-px bg-white/90" />
-          <div className="absolute inset-y-[-4px] left-[90.5%] w-px bg-kitchen-moss/35" />
+          <div className="absolute inset-y-0 w-px bg-white/90" style={{ left: `${hundredMarkerPercent}%` }} />
+          <div className="absolute inset-y-[-4px] w-px bg-kitchen-moss/35" style={{ left: `${hundredMarkerPercent}%` }} />
           {item.threshold > 0 ? (
             <div
               className="absolute inset-y-[-5px] w-[2px] rounded-full bg-red-500/80"
-              style={{ left: `${Math.min(item.thresholdMarkerPercent, 100)}%` }}
+              style={{ left: `${thresholdMarkerLeft}%` }}
             />
           ) : null}
           <div
             className={`h-full rounded-full transition-all ${toneStyles[item.inventoryLevelTone] || toneStyles.healthy}`}
-            style={{ width: `${Math.max(item.inventoryDisplayPercent, item.quantity > 0 ? 4 : 0)}%` }}
+            style={{ width: `${barWidthPercent}%` }}
           />
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
@@ -3337,6 +3443,44 @@ function SelectField({ label, value, onChange, options, placeholder = "", requir
         ))}
       </select>
     </label>
+  );
+}
+
+function SuggestInputField({ label, value, onChange, onSelectSuggestion, suggestions, placeholder = "", required = false }) {
+  return (
+    <div className="space-y-3">
+      <label className="block">
+        <span className="mb-2 block text-sm font-medium">{label}</span>
+        <input
+          type="text"
+          value={value}
+          required={required}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && suggestions[0]) {
+              event.preventDefault();
+              onSelectSuggestion(suggestions[0]);
+            }
+          }}
+          className="w-full rounded-2xl border border-kitchen-sage bg-kitchen-cream px-4 py-3 text-sm outline-none transition focus:border-kitchen-leaf"
+        />
+      </label>
+      {value && suggestions.length ? (
+        <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-kitchen-sage/60 bg-white px-3 py-3">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => onSelectSuggestion(suggestion)}
+              className="rounded-full bg-kitchen-cream px-3 py-1.5 text-xs font-medium text-kitchen-moss transition hover:bg-kitchen-sage"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
