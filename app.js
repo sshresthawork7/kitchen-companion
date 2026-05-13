@@ -95,46 +95,49 @@ function normalizePriority(priority) {
 }
 
 const RECIPE_IMAGE_BY_NAME = {
-  "tea": "./assets/break.jpg",
+  "tea": "https://upload.wikimedia.org/wikipedia/commons/f/fd/A_Cup_of_Tea.jpg",
   "roti": "./assets/bread.jpg",
   "oatmeal": "./assets/oatmeal.png",
   "oats": "./assets/Oats.jpg",
   "breast toast": "./assets/bread.jpg",
   "toast": "./assets/bread.jpg",
-  "avacado": "./assets/veggies.jpg",
+  "avacado": "./assets/break.jpg",
+  "avocado": "./assets/break.jpg",
   "eggs": "./assets/eggs.jpg",
   "simple eggs": "./assets/eggs.jpg",
   "banana": "./assets/fruits.png",
-  "coffee": "./assets/break.jpg",
-  "pan cake": "./assets/break.jpg",
-  "waffles": "./assets/break.jpg",
-  "chia pudding": "./assets/break.jpg",
+  "coffee": "https://upload.wikimedia.org/wikipedia/commons/a/ab/VN_coffee_cup.JPG",
+  "pan cake": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Pancake_breakfast_%2831361530717%29.jpg/960px-Pancake_breakfast_%2831361530717%29.jpg",
+  "waffles": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Belgian_Waffle_Breakfast_%2833960865713%29.jpg/3840px-Belgian_Waffle_Breakfast_%2833960865713%29.jpg",
+  "chia pudding": "./assets/oatmeal.png",
   "green smoothie": "https://upload.wikimedia.org/wikipedia/commons/1/10/Green_Smoothie.jpg?utm_campaign=index&utm_content=original&utm_source=commons.wikimedia.org",
-  "muffin": "./assets/break.jpg",
-  "donuts": "./assets/break.jpg",
+  "muffin": "https://upload.wikimedia.org/wikipedia/commons/8/83/Gfp-muffin.jpg",
+  "donuts": "https://upload.wikimedia.org/wikipedia/commons/1/1c/Donuts.jpg?utm_campaign=index&utm_content=original&utm_source=commons.wikimedia.org",
   "gwar mari": "./assets/bread.jpg",
-  "bagels": "./assets/bread.jpg",
+  "bagels": "https://upload.wikimedia.org/wikipedia/commons/b/b9/Alinea_-_bagel.jpg",
   "pb jelly sandwich": "./assets/bread.jpg",
+  "pb jelly sandwish": "./assets/bread.jpg",
   "dal bhat": "./assets/lentils.jpg",
   "chowmein": "https://upload.wikimedia.org/wikipedia/commons/4/41/Chowmein.jpg",
   "spaghetti": "./assets/pasta.png",
   "haluwa": "./assets/haluwa.jpg",
   "malpuwa": "./assets/malpuwa.jpg",
-  "mac n cheese": "./assets/pasta.png",
+  "mac n cheese": "https://images.pexels.com/photos/32083398/pexels-photo-32083398.jpeg",
+  "mac and cheese": "https://images.pexels.com/photos/32083398/pexels-photo-32083398.jpeg",
   "alfredo pasta": "./assets/pasta.png",
-  "pakoda": "./assets/pakoda.jpg",
-  "bara": "./assets/bara.jpg",
+  "pakoda": "https://upload.wikimedia.org/wikipedia/commons/3/30/Pakora.JPG",
+  "bara": "https://upload.wikimedia.org/wikipedia/commons/4/47/Bara_%2833428%29.jpg",
   "chicken": "./assets/chicken.jpg",
   "thai basil chicken": "./assets/chicken.jpg",
-  "chicken curry": "./assets/chicken.jpg",
+  "chicken curry": "https://images.pexels.com/photos/29684985/pexels-photo-29684985.jpeg",
   "chicken soup": "./assets/noodlesoup.jpg",
   "vegetables": "./assets/veggies.jpg",
   "mixed vegetables": "./assets/veggies.jpg",
-  "marinara pasta": "./assets/pasta.png",
+  "marinara pasta": "https://images.pexels.com/photos/33921434/pexels-photo-33921434.jpeg",
   "pizza": "https://upload.wikimedia.org/wikipedia/commons/4/41/Pizza_food.jpg",
   "burger": "https://upload.wikimedia.org/wikipedia/commons/6/6a/Open_faced_burger.jpg",
   "wrap/sandwich": "./assets/bread.jpg",
-  "salad": "./assets/veggies.jpg",
+  "salad": "https://upload.wikimedia.org/wikipedia/commons/9/9d/Garden_salad.jpg",
   "chuira": "./assets/chuira.jpg",
   "samosa": "https://upload.wikimedia.org/wikipedia/commons/e/e1/Indian_samosa.jpg",
   "ghundruk": "./assets/ghundruk.jpg",
@@ -150,6 +153,7 @@ const RECIPE_IMAGE_BY_NAME = {
   "spiced potatoes": "./assets/mustang-aloo.jpg",
   "spiced aloo": "./assets/mustang-aloo.jpg",
   "mustang aloo": "./assets/mustang-aloo.jpg",
+  "mustang alu": "./assets/mustang-aloo.jpg",
   "mustang": "./assets/mustang-aloo.jpg",
   "choila": "./assets/choila.jpg",
   "chatpate": "./assets/chatpate.jpg",
@@ -169,19 +173,19 @@ const RECIPE_IMAGE_BY_NAME = {
   "fish": "./assets/fish.jpg",
   "salmon": "./assets/salmon.jpg",
   "tofu": "./assets/tofu.jpg",
-  "peanut butter banana smoothie": "./assets/fruits.png",
+  "peanut butter banana smoothie": "https://upload.wikimedia.org/wikipedia/commons/d/de/Fruit_and_peanut_butter_smoothie.jpg",
   "ice cream": "./assets/ice-cream.jpg",
   "lassi": "./assets/lassi.jpg",
-  "banana milk": "./assets/fruits.png",
+  "banana milk": "https://upload.wikimedia.org/wikipedia/commons/6/6d/Banana_milk.jpg",
   "fruits": "./assets/fruits.png",
   "boba": "./assets/boba.jpg",
-  "chips": "./assets/snacks.jpg",
+  "chips": "https://upload.wikimedia.org/wikipedia/commons/6/69/Potato-Chips.jpg?utm_campaign=index&utm_content=original&utm_source=commons.wikimedia.org",
   "edamame": "./assets/edamame.jpg",
-  "pop corn": "./assets/snacks.jpg",
+  "pop corn": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/Popcorn_%281%29.jpg/960px-Popcorn_%281%29.jpg?utm_campaign=index&utm_content=thumbnail&utm_source=commons.wikimedia.org",
   "cake": "./assets/cake.jpg",
-  "nuts": "./assets/snacks.jpg",
-  "cucumber": "./assets/veggies.jpg",
-  "carrots": "./assets/veggies.jpg",
+  "nuts": "https://upload.wikimedia.org/wikipedia/commons/4/4b/Nuts_mixed.jpg",
+  "cucumber": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Sliced_Cucumber.jpg?utm_campaign=index&utm_content=original&utm_source=commons.wikimedia.org",
+  "carrots": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/Fresh_Carrots.jpg/1280px-Fresh_Carrots.jpg?utm_campaign=index&utm_content=thumbnail&utm_source=commons.wikimedia.org",
   "soda": "./assets/soda.jpg",
   "jaulo": "./assets/jaulo.png",
   "zeera": "./assets/zeera.jpg"
@@ -500,6 +504,9 @@ function resolveRecipeImage(recipe) {
   const normalizedName = recipeName.trim().toLowerCase();
   const mappedImage = getRecipeImage(recipeName, category);
   const currentImage = recipe.imageUrl || recipe.image || "";
+  const notes = String(recipe.notes || "").toLowerCase();
+  const hasNamedRecipeImage = Object.prototype.hasOwnProperty.call(RECIPE_IMAGE_BY_NAME, normalizedName);
+  const isImportedMenuSeed = notes.includes("imported from your food hub menu list");
 
   if (!currentImage) {
     return mappedImage;
@@ -515,16 +522,26 @@ function resolveRecipeImage(recipe) {
     normalizedCurrent.startsWith("./assets/") ||
     normalizedCurrent.includes("/assets/") ||
     browserReadyCurrent.includes("/assets/");
-  const hasNamedRecipeImage = Object.prototype.hasOwnProperty.call(RECIPE_IMAGE_BY_NAME, normalizedName);
-
-  if (looksLikeLegacyLocalPath && mappedImage) {
-    return mappedImage;
-  }
 
   const looksLikeBlockedRemoteImage =
     normalizedCurrent.includes("century.com.np/") ||
     normalizedCurrent.includes("pinterest.com/") ||
-    normalizedCurrent.includes("pinimg.com/");
+    normalizedCurrent.includes("pinimg.com/") ||
+    normalizedCurrent.includes("istockphoto.com/") ||
+    normalizedCurrent.includes("shutterstock.com/") ||
+    normalizedCurrent.includes("freepik.com/") ||
+    normalizedCurrent.includes("magnific.com/") ||
+    normalizedCurrent.includes("tiktok.com/");
+
+  const looksLikeDirectImage = /\.(png|jpe?g|webp|gif|svg)(\?|#|$)/i.test(normalizedCurrent) || normalizedCurrent.startsWith("data:");
+
+  if (isImportedMenuSeed && hasNamedRecipeImage && mappedImage) {
+    return mappedImage;
+  }
+
+  if (looksLikeLegacyLocalPath && mappedImage) {
+    return mappedImage;
+  }
 
   if (looksLikeBlockedRemoteImage && mappedImage) {
     return mappedImage;
@@ -535,6 +552,10 @@ function resolveRecipeImage(recipe) {
       return mappedImage;
     }
     return "";
+  }
+
+  if (!looksLikeDirectImage && mappedImage) {
+    return mappedImage;
   }
 
   return browserReadyCurrent;
@@ -1253,28 +1274,62 @@ function App() {
     }
 
     remoteSyncTimeoutRef.current = setTimeout(async () => {
-      const [recipeDelete, inventoryDelete, groceryDelete] = await Promise.all([
-        supabaseClient.from("recipes").delete().eq("household_id", householdId),
-        supabaseClient.from("inventory_items").delete().eq("household_id", householdId),
-        supabaseClient.from("grocery_items").delete().eq("household_id", householdId)
-      ]);
+      const syncTable = async (tableName, rows) => {
+        const { data: existingRows, error: existingError } = await supabaseClient
+          .from(tableName)
+          .select("*")
+          .eq("household_id", householdId);
 
-      const deleteError = recipeDelete.error || inventoryDelete.error || groceryDelete.error;
-      if (deleteError) {
-        console.error("Unable to clear household data before sync", deleteError);
-        return;
-      }
+        if (existingError) {
+          return { error: existingError };
+        }
+
+        const existingById = new Map((existingRows || []).filter((row) => row.id).map((row) => [row.id, row]));
+        const existingIds = new Set(existingById.keys());
+        const currentIds = new Set(rows.map((row) => row.id).filter(Boolean));
+        const idsToDelete = [...existingIds].filter((id) => !currentIds.has(id));
+
+        if (idsToDelete.length) {
+          const { error: deleteError } = await supabaseClient
+            .from(tableName)
+            .delete()
+            .in("id", idsToDelete);
+
+          if (deleteError) {
+            return { error: deleteError };
+          }
+        }
+
+        if (!rows.length) {
+          return { error: null };
+        }
+
+        const rowsToUpsert = rows.filter((row) => {
+          const existingRow = existingById.get(row.id);
+          if (!existingRow) {
+            return true;
+          }
+
+          return Object.keys(row).some((key) => {
+            const nextValue = row[key];
+            const existingValue = existingRow[key];
+            return JSON.stringify(nextValue ?? null) !== JSON.stringify(existingValue ?? null);
+          });
+        });
+
+        if (!rowsToUpsert.length) {
+          return { error: null };
+        }
+
+        return supabaseClient
+          .from(tableName)
+          .upsert(rowsToUpsert, { onConflict: "id" });
+      };
 
       const syncResponses = await Promise.all([
-        recipes.length
-          ? supabaseClient.from("recipes").insert(recipes.map((recipe) => recipeToRow(recipe, householdId)))
-          : Promise.resolve({ error: null }),
-        inventory.length
-          ? supabaseClient.from("inventory_items").insert(inventory.map((item) => inventoryToRow(item, householdId)))
-          : Promise.resolve({ error: null }),
-        grocery.length
-          ? supabaseClient.from("grocery_items").insert(grocery.map((item) => groceryToRow(item, householdId)))
-          : Promise.resolve({ error: null })
+        syncTable("recipes", recipes.map((recipe) => recipeToRow(recipe, householdId))),
+        syncTable("inventory_items", inventory.map((item) => inventoryToRow(item, householdId))),
+        syncTable("grocery_items", grocery.map((item) => groceryToRow(item, householdId)))
       ]);
 
       const syncError = syncResponses.find((response) => response?.error)?.error;
