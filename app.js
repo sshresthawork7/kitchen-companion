@@ -77,11 +77,12 @@ const UNIT_OPTIONS = [
 const PRIORITY_OPTIONS = [
   "Critical",
   "Essential",
-  "Nice to Have",
-  "Optional"
+  "Supplementary",
+  "Low Priority"
 ];
 
 const SERVING_SIZE_OPTIONS = [1, 2, 4, 6];
+const SUBSTITUTE_ALERT_GROUP_TAGS = ["Lentil Group", "Bean Group", "Chicken Group"];
 
 function normalizePriority(priority) {
   const normalized = String(priority || "").trim().toLowerCase();
@@ -89,12 +90,13 @@ function normalizePriority(priority) {
   if (normalized === "critical" || normalized === "critic") return "Critical";
   if (normalized === "essential") return "Essential";
   if (
+    normalized === "supplementary" ||
     normalized === "nice to have" ||
     normalized === "nice-to-have" ||
     normalized === "nice have" ||
     normalized === "nice"
-  ) return "Nice to Have";
-  if (normalized === "optional") return "Optional";
+  ) return "Supplementary";
+  if (normalized === "low priority" || normalized === "low-priority" || normalized === "optional") return "Low Priority";
   return "Essential";
 }
 
@@ -450,7 +452,7 @@ const defaultGrocery = [
     source: "manual",
     linkedInventoryId: null,
     suppressed: false,
-    priority: "Nice to Have"
+    priority: "Supplementary"
   }
 ];
 
@@ -1417,6 +1419,19 @@ const RECIPE_DETAILS_BY_NAME = {
     steps: "Chill and serve.",
     notes: "A simple drink entry for logging only, not an everyday nutrition goal item.",
     tags: ["Drink", "Treat", "Low Priority"]
+  },
+  "breast toast": {
+    difficulty: "Very Easy",
+    prepTime: "8 minutes",
+    servings: 1,
+    structuredIngredients: [
+      { name: "Bread", quantity: 2, unit: "piece" },
+      { name: "Eggs", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Bread, egg, butter or oil, salt, pepper",
+    steps: "Toast the bread and prepare the egg how you like it. Place the egg over the toast, season lightly, and serve warm.",
+    notes: "A simple quick breakfast entry for toast with egg or protein on top.",
+    tags: ["Breakfast", "Quick", "Protein"]
   }
 };
 
@@ -1669,8 +1684,8 @@ function getPriorityWeight(priority) {
   const weights = {
     "Critical": 4,
     "Essential": 3,
-    "Nice to Have": 2,
-    "Optional": 1
+    "Supplementary": 2,
+    "Low Priority": 1
   };
 
   return weights[normalizedPriority] || 2;
@@ -1759,6 +1774,39 @@ function getUrgencyTone(item) {
   if (priorityWeight >= 3 && stockPercent <= 60) return "high";
   if (stockPercent <= 80) return "medium";
   return "low";
+}
+
+function getItemSubstituteAlertGroup(item) {
+  const itemTags = Array.isArray(item?.tags) ? item.tags : [];
+  return SUBSTITUTE_ALERT_GROUP_TAGS.find((tag) => itemTags.includes(tag)) || null;
+}
+
+function getGroupedAlertItems(items) {
+  const grouped = new Map();
+  const ungrouped = [];
+
+  items.forEach((item) => {
+    const groupTag = getItemSubstituteAlertGroup(item);
+    if (!groupTag) {
+      ungrouped.push(item);
+      return;
+    }
+
+    if (!grouped.has(groupTag)) {
+      grouped.set(groupTag, []);
+    }
+    grouped.get(groupTag).push(item);
+  });
+
+  const resolvedGroups = [];
+  grouped.forEach((groupItems) => {
+    const everyItemNeedsAttention = groupItems.every((item) => item.status === "Low Stock" || item.status === "Finished");
+    if (everyItemNeedsAttention) {
+      resolvedGroups.push(...groupItems);
+    }
+  });
+
+  return [...ungrouped, ...resolvedGroups];
 }
 
 function getShoppingSignal(alertItems) {
@@ -2003,6 +2051,16 @@ function foodLogToRow(entry, householdId, userId) {
     fat_g: Number(entry.fatG || 0),
     notes: entry.notes || "",
     logged_by: userId || null
+  };
+}
+
+function dailyNutritionGoalsToRow(goals, householdId) {
+  return {
+    household_id: householdId,
+    calories_goal: Math.max(Number(goals?.calories || 0) || 0, 0),
+    protein_g_goal: Math.max(Number(goals?.proteinG || 0) || 0, 0),
+    carbs_g_goal: Math.max(Number(goals?.carbsG || 0) || 0, 0),
+    fat_g_goal: Math.max(Number(goals?.fatG || 0) || 0, 0)
   };
 }
 
@@ -2372,7 +2430,7 @@ function App() {
         const nextHouseholdId = profile.household_id;
         setHouseholdId(nextHouseholdId);
 
-        const [recipesResponse, inventoryResponse, groceryResponse, foodLogResponse] = await Promise.all([
+        const [recipesResponse, inventoryResponse, groceryResponse, foodLogResponse, nutritionGoalsResponse] = await Promise.all([
           supabaseClient
             .from("recipes")
             .select("id, recipe_name, category, difficulty, prep_time, serving_count, structured_ingredients, ingredients, steps, notes, image_url, tags")
@@ -2392,13 +2450,18 @@ function App() {
             .from("food_log_entries")
             .select("id, recipe_id, recipe_name, servings_eaten, consumed_at, calories, protein_g, carbs_g, fat_g, notes, logged_by")
             .eq("household_id", nextHouseholdId)
-            .order("consumed_at", { ascending: false })
+            .order("consumed_at", { ascending: false }),
+          supabaseClient
+            .from("household_settings")
+            .select("household_id, calories_goal, protein_g_goal, carbs_g_goal, fat_g_goal")
+            .eq("household_id", nextHouseholdId)
+            .maybeSingle()
         ]);
 
         if (!isMounted) return;
 
-        if (recipesResponse.error || inventoryResponse.error || groceryResponse.error || foodLogResponse.error) {
-          console.error("Unable to load Supabase household data", recipesResponse.error || inventoryResponse.error || groceryResponse.error || foodLogResponse.error);
+        if (recipesResponse.error || inventoryResponse.error || groceryResponse.error || foodLogResponse.error || nutritionGoalsResponse.error) {
+          console.error("Unable to load Supabase household data", recipesResponse.error || inventoryResponse.error || groceryResponse.error || foodLogResponse.error || nutritionGoalsResponse.error);
           setRemoteLoadError("We could not load your shared household data from Supabase.");
           setHasRemoteDataLoaded(true);
           setIsHydratingData(false);
@@ -2463,14 +2526,23 @@ function App() {
           fatG: entry.fat_g,
           notes: entry.notes || ""
         })));
+        const remoteDailyNutritionGoals = nutritionGoalsResponse.data
+          ? normalizeDailyNutritionGoals({
+              calories: nutritionGoalsResponse.data.calories_goal,
+              proteinG: nutritionGoalsResponse.data.protein_g_goal,
+              carbsG: nutritionGoalsResponse.data.carbs_g_goal,
+              fatG: nutritionGoalsResponse.data.fat_g_goal
+            })
+          : null;
 
-        const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0 || remoteFoodLog.length > 0;
+        const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0 || remoteFoodLog.length > 0 || Boolean(remoteDailyNutritionGoals);
 
         if (!hasRemoteData) {
           const seededRecipes = mergeSeedRecipes(recipes, normalizeRecipes(defaultRecipes));
           const seededInventory = inventory;
           const seededGrocery = grocery;
           const seededFoodLog = foodLog;
+          const seededDailyNutritionGoals = dailyNutritionGoals;
 
           const seedResponses = await Promise.all([
             seededRecipes.length
@@ -2484,7 +2556,8 @@ function App() {
               : Promise.resolve({ error: null }),
             seededFoodLog.length
               ? supabaseClient.from("food_log_entries").insert(seededFoodLog.map((entry) => foodLogToRow(entry, nextHouseholdId, currentUser.id)))
-              : Promise.resolve({ error: null })
+              : Promise.resolve({ error: null }),
+            supabaseClient.from("household_settings").upsert(dailyNutritionGoalsToRow(seededDailyNutritionGoals, nextHouseholdId), { onConflict: "household_id" })
           ]);
 
           const seedError = seedResponses.find((response) => response?.error)?.error;
@@ -2500,11 +2573,15 @@ function App() {
           setInventory(seededInventory);
           setGrocery(seededGrocery);
           setFoodLog(seededFoodLog);
+          setDailyNutritionGoals(seededDailyNutritionGoals);
         } else {
           setRecipes(mergeSeedRecipes(remoteRecipes, normalizeRecipes(defaultRecipes)));
           setInventory(remoteInventory);
           setGrocery(remoteGrocery);
           setFoodLog(remoteFoodLog);
+          if (remoteDailyNutritionGoals) {
+            setDailyNutritionGoals(remoteDailyNutritionGoals);
+          }
         }
 
         setHasRemoteDataLoaded(true);
@@ -2591,7 +2668,8 @@ function App() {
         syncTable("recipes", recipes.map((recipe) => recipeToRow(recipe, householdId))),
         syncTable("inventory_items", inventory.map((item) => inventoryToRow(item, householdId))),
         syncTable("grocery_items", grocery.map((item) => groceryToRow(item, householdId))),
-        syncTable("food_log_entries", foodLog.map((entry) => foodLogToRow(entry, householdId, currentUser?.id)))
+        syncTable("food_log_entries", foodLog.map((entry) => foodLogToRow(entry, householdId, currentUser?.id))),
+        supabaseClient.from("household_settings").upsert(dailyNutritionGoalsToRow(dailyNutritionGoals, householdId), { onConflict: "household_id" })
       ]);
 
       const syncError = syncResponses.find((response) => response?.error)?.error;
@@ -2605,7 +2683,7 @@ function App() {
         clearTimeout(remoteSyncTimeoutRef.current);
       }
     };
-  }, [currentUser, householdId, hasRemoteDataLoaded, isHydratingData, recipes, inventory, grocery, foodLog]);
+  }, [currentUser, householdId, hasRemoteDataLoaded, isHydratingData, recipes, inventory, grocery, foodLog, dailyNutritionGoals]);
 
   const inventoryWithStatus = useMemo(
     () => inventory.map((item) => {
@@ -2650,9 +2728,9 @@ function App() {
 
   const alertItems = useMemo(
     () =>
-      inventoryWithStatus
-        .filter((item) => item.status === "Low Stock" || item.status === "Finished")
-        .sort((a, b) => (b.priorityWeight - a.priorityWeight) || (a.stockPercent - b.stockPercent)),
+      getGroupedAlertItems(
+        inventoryWithStatus.filter((item) => item.status === "Low Stock" || item.status === "Finished")
+      ).sort((a, b) => (b.priorityWeight - a.priorityWeight) || (a.stockPercent - b.stockPercent)),
     [inventoryWithStatus]
   );
 
@@ -3748,7 +3826,7 @@ function App() {
 
         {activeTab === "dashboard" && (
           <section className="space-y-6">
-            <section className="grid gap-4 lg:grid-cols-3">
+            <section className="grid gap-4 md:grid-cols-3">
               <QuickJumpCard
                 eyebrow="Start Here"
                 title="Browse the menu"
@@ -3774,6 +3852,57 @@ function App() {
                 accent="blush"
               />
             </section>
+
+            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
+              <Panel
+                title="Today’s Health Snapshot"
+                action={
+                  <SecondaryButton type="button" onClick={() => setActiveTab("food-log")}>
+                    Open Food Log
+                  </SecondaryButton>
+                }
+              >
+                <div className="mb-4 overflow-hidden rounded-[1.5rem] border border-kitchen-sage/60 bg-[radial-gradient(circle_at_top_left,_rgba(223,238,229,0.98),_rgba(255,255,255,0.94)_52%,_rgba(224,239,247,0.72))] px-4 py-4 sm:px-5">
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-kitchen-leaf">Daily Nutrition</p>
+                      <p className="mt-2 max-w-xl text-sm leading-6 text-slate-700">A quick health check from today’s logged meals and your current goals.</p>
+                    </div>
+                    <div className="rounded-2xl bg-white/85 px-4 py-3 text-left shadow-sm md:min-w-[9rem] md:text-right">
+                      <p className="text-2xl font-semibold text-kitchen-moss">{todaysFoodLogEntries.length}</p>
+                      <p className="text-xs uppercase tracking-[0.16em] text-kitchen-leaf">meal{todaysFoodLogEntries.length !== 1 ? "s" : ""} today</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <NutritionTotalCard label="Calories" value={Math.round(todaysNutritionTotals.calories)} goal={dailyNutritionGoals.calories} unit="cal" tone="inStock" />
+                  <NutritionTotalCard label="Protein" value={roundInventoryValue(todaysNutritionTotals.proteinG)} goal={dailyNutritionGoals.proteinG} unit="g" tone="lowStock" />
+                  <NutritionTotalCard label="Carbs" value={roundInventoryValue(todaysNutritionTotals.carbsG)} goal={dailyNutritionGoals.carbsG} unit="g" tone="finished" />
+                  <NutritionTotalCard label="Fat" value={roundInventoryValue(todaysNutritionTotals.fatG)} goal={dailyNutritionGoals.fatG} unit="g" tone="medium" />
+                </div>
+              </Panel>
+
+              <Panel title="Recent Meals Today">
+                {todaysFoodLogEntries.length === 0 ? (
+                  <EmptyState text="No meals logged yet today." />
+                ) : (
+                  <SimpleList
+                    items={todaysFoodLogEntries.slice(0, 3)}
+                    emptyText="No meals logged yet today."
+                    renderItem={(entry) => (
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-kitchen-moss">{entry.recipeName}</p>
+                          <p className="text-sm text-slate-600">{entry.servingsEaten} serving{entry.servingsEaten !== 1 ? "s" : ""} • {new Date(entry.consumedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
+                        </div>
+                        <span className="text-sm font-medium text-slate-700">{entry.calories} cal</span>
+                      </div>
+                    )}
+                  />
+                )}
+              </Panel>
+            </section>
+
             <section className="overflow-hidden rounded-[2rem] border border-kitchen-sage bg-[radial-gradient(circle_at_top_left,_rgba(219,229,218,0.9),_rgba(247,247,243,1)_48%,_rgba(244,224,217,0.55))] px-6 py-6 shadow-soft">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -3830,7 +3959,7 @@ function App() {
                     <span className="rounded-full bg-kitchen-cream px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.length} total alert{alertItems.length !== 1 ? "s" : ""}</span>
                     <span className="rounded-full bg-kitchen-cream px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Critical").length} critical</span>
                     <span className="rounded-full bg-kitchen-cream px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Essential").length} essential</span>
-                    <span className="rounded-full bg-kitchen-cream px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Nice to Have").length} nice to have</span>
+                    <span className="rounded-full bg-kitchen-cream px-4 py-2 font-medium text-kitchen-moss shadow-sm">{alertItems.filter((item) => normalizePriority(item.priority) === "Supplementary").length} supplementary</span>
                   </div>
                 )}
               </Panel>
@@ -4041,7 +4170,7 @@ function App() {
                             <p className="text-lg font-semibold text-kitchen-moss">{recipe.recipeName}</p>
                             <p className="mt-1 text-sm text-slate-600">{recipe.category} • {sessionItem.servings} serving{sessionItem.servings !== 1 ? "s" : ""}</p>
                           </div>
-                          <PriorityBadge priority={sessionItem.reducibleInventoryItems.length ? "Essential" : "Optional"} />
+                          <PriorityBadge priority={sessionItem.reducibleInventoryItems.length ? "Essential" : "Low Priority"} />
                         </div>
 
                         <div>
@@ -4581,7 +4710,7 @@ function App() {
                 <InputField label="Carbs Goal (g)" type="number" value={dailyNutritionGoals.carbsG} onChange={(value) => setDailyNutritionGoals((current) => ({ ...current, carbsG: Math.max(Number(value || 0) || 0, 0) }))} />
                 <InputField label="Fat Goal (g)" type="number" value={dailyNutritionGoals.fatG} onChange={(value) => setDailyNutritionGoals((current) => ({ ...current, fatG: Math.max(Number(value || 0) || 0, 0) }))} />
               </div>
-              <p className="mt-3 text-sm text-slate-600">These goals stay saved on this device for now and drive the Food Log progress bars.</p>
+              <p className="mt-3 text-sm text-slate-600">These goals are now saved with your shared household settings and drive the Food Log and dashboard progress bars.</p>
             </Panel>
 
             <div className="grid gap-4 lg:grid-cols-4">
@@ -4768,14 +4897,16 @@ function NutritionTotalCard({ label, value, goal = 0, unit = "", tone = "inStock
   const barPercent = numericGoal > 0 ? Math.min(rawPercent, 100) : 0;
 
   return (
-    <div className="rounded-[1.5rem] border border-kitchen-sage bg-white px-4 py-4 shadow-soft">
-      <div className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
-        <span>{label}</span>
-        <span>{value}{unit ? ` ${unit}` : ""}</span>
-      </div>
-      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-        <span>{numericGoal > 0 ? `${rawPercent}% of goal` : 'No goal set'}</span>
-        <span>{numericGoal > 0 ? `${numericGoal}${unit ? ` ${unit}` : ""} goal` : 'Set a target below'}</span>
+    <div className="rounded-[1.5rem] border border-kitchen-sage/80 bg-white px-4 py-4 shadow-soft">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-kitchen-leaf">{label}</p>
+          <p className="mt-3 text-3xl font-semibold leading-none text-kitchen-moss sm:text-[2rem]">{value}<span className="ml-1 text-base font-medium text-slate-500">{unit}</span></p>
+        </div>
+        <div className="text-right text-xs text-slate-500">
+          <p>{numericGoal > 0 ? `${rawPercent}% of goal` : "No goal set"}</p>
+          <p className="mt-1">{numericGoal > 0 ? `${numericGoal}${unit ? ` ${unit}` : ""} goal` : "Set a target below"}</p>
+        </div>
       </div>
       <div className="mt-4 h-3 rounded-full bg-kitchen-cream">
         <div className={`h-3 rounded-full ${toneClasses[tone] || toneClasses.inStock}`} style={{ width: `${barPercent}%` }} />
@@ -4900,9 +5031,9 @@ function QuickJumpCard({ eyebrow, title, description, actionLabel, onClick, acce
 
 function Panel({ title, action, children }) {
   return (
-    <section className="rounded-[1.75rem] border border-kitchen-sage/80 bg-white/95 p-5 shadow-soft backdrop-blur-sm">
+    <section className="rounded-[1.75rem] border border-kitchen-sage/80 bg-white/95 p-4 shadow-soft backdrop-blur-sm sm:p-5 lg:p-6">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-xl font-semibold">{title}</h2>
+        <h2 className="text-xl font-semibold text-kitchen-moss sm:text-[1.35rem]">{title}</h2>
         {action}
       </div>
       {children}
@@ -4941,7 +5072,7 @@ function DashboardGroceryRow({ item, onQuantityChange, onRestock }) {
 
   return (
     <div className="rounded-[1.4rem] border border-white/70 bg-[linear-gradient(135deg,_rgba(255,255,255,0.96),_rgba(247,247,243,0.92))] px-4 py-4 shadow-sm">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-medium text-kitchen-moss">{item.itemName}</p>
@@ -4949,8 +5080,8 @@ function DashboardGroceryRow({ item, onQuantityChange, onRestock }) {
           </div>
           <p className="mt-1 text-sm text-slate-600">{item.category} • {item.unit}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center overflow-hidden rounded-full border border-kitchen-sage bg-white shadow-sm">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end lg:w-auto">
+          <div className="inline-flex items-center justify-between overflow-hidden rounded-full border border-kitchen-sage bg-white shadow-sm">
             <button
               type="button"
               onClick={() => onQuantityChange(item.id, Math.max(numericQuantity - 1, 0))}
@@ -4965,7 +5096,7 @@ function DashboardGroceryRow({ item, onQuantityChange, onRestock }) {
               step="0.1"
               value={item.quantity}
               onChange={(event) => onQuantityChange(item.id, event.target.value)}
-              className="w-14 border-x border-kitchen-sage bg-transparent px-2 py-2 text-center text-sm font-medium outline-none"
+              className="w-16 border-x border-kitchen-sage bg-transparent px-2 py-2 text-center text-sm font-medium outline-none"
               aria-label={`${item.itemName} quantity`}
             />
             <button
@@ -4977,7 +5108,7 @@ function DashboardGroceryRow({ item, onQuantityChange, onRestock }) {
               +
             </button>
           </div>
-          <SecondaryButton type="button" onClick={() => onRestock(item)}>
+          <SecondaryButton type="button" onClick={() => onRestock(item)} className="w-full justify-center sm:w-auto">
             Restock to Inventory
           </SecondaryButton>
         </div>
@@ -4987,16 +5118,17 @@ function DashboardGroceryRow({ item, onQuantityChange, onRestock }) {
 }
 
 function PriorityBadge({ priority }) {
+  const normalizedPriority = normalizePriority(priority);
   const styles = {
     "Critical": "bg-red-100 text-red-800",
     "Essential": "bg-amber-100 text-amber-800",
-    "Nice to Have": "bg-sky-100 text-sky-800",
-    "Optional": "bg-slate-100 text-slate-700"
+    "Supplementary": "bg-sky-100 text-sky-800",
+    "Low Priority": "bg-slate-100 text-slate-700"
   };
 
   return (
-    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${styles[priority] || styles["Nice to Have"]}`}>
-      {priority}
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${styles[normalizedPriority] || styles["Supplementary"]}`}>
+      {normalizedPriority}
     </span>
   );
 }
