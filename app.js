@@ -1458,6 +1458,284 @@ function writeStorage(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+
+function normalizeImportKey(key) {
+  return String(key || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function getImportedCell(row, aliases) {
+  for (const alias of aliases) {
+    const value = row[normalizeImportKey(alias)];
+    if (value !== undefined) {
+      return String(value).trim();
+    }
+  }
+  return "";
+}
+
+function parseImportNumber(value, fallback = "") {
+  if (value === "" || value == null) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseImportTags(value, fallback = []) {
+  if (!String(value || "").trim()) return fallback;
+  return Array.from(new Set(String(value)
+    .split(/[;,|]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)));
+}
+
+function parseStructuredIngredientsCell(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+
+  if (raw.startsWith("[")) {
+    try {
+      return normalizeStructuredIngredients(JSON.parse(raw));
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  return normalizeStructuredIngredients(
+    raw
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const [name = "", quantity = "", unit = ""] = part.split("|").map((piece) => piece.trim());
+        return {
+          name,
+          quantity: quantity === "" ? "" : Number(quantity),
+          unit
+        };
+      })
+  );
+}
+
+function parseCSVText(text) {
+  const rows = [];
+  let currentRow = [];
+  let currentCell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const nextChar = text[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      currentRow.push(currentCell);
+      currentCell = "";
+      continue;
+    }
+
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") {
+        index += 1;
+      }
+      currentRow.push(currentCell);
+      if (currentRow.some((cell) => String(cell || "").trim() !== "")) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = "";
+      continue;
+    }
+
+    currentCell += char;
+  }
+
+  currentRow.push(currentCell);
+  if (currentRow.some((cell) => String(cell || "").trim() !== "")) {
+    rows.push(currentRow);
+  }
+
+  if (rows.length < 2) return [];
+
+  const headers = rows[0].map((header) => normalizeImportKey(header));
+  return rows.slice(1).map((row) => {
+    const mapped = {};
+    headers.forEach((header, headerIndex) => {
+      mapped[header] = String(row[headerIndex] ?? "").trim();
+    });
+    return mapped;
+  }).filter((row) => Object.values(row).some(Boolean));
+}
+
+function getDefaultInventoryImportRecord(itemName) {
+  return normalizeInventory([{
+    itemName,
+    category: "Pantry",
+    quantity: 0,
+    unit: "item",
+    desiredAmount: 1,
+    thresholdMode: "percent",
+    thresholdPercent: 25,
+    threshold: 0,
+    notes: "",
+    priority: "Essential",
+    tags: []
+  }])[0];
+}
+
+function mergeInventoryImportRows(rows, currentItems) {
+  const existingByName = new Map(currentItems.map((item) => [item.itemName.trim().toLowerCase(), item]));
+  const nextItems = [...currentItems];
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  rows.forEach((row) => {
+    const itemName = getImportedCell(row, ["item_name", "itemname", "name"]);
+    if (!itemName) {
+      skipped += 1;
+      return;
+    }
+
+    const normalizedName = itemName.trim().toLowerCase();
+    const existing = existingByName.get(normalizedName);
+    const base = existing ? { ...existing } : getDefaultInventoryImportRecord(itemName);
+
+    const category = getImportedCell(row, ["category"]) || base.category;
+    const quantity = parseImportNumber(getImportedCell(row, ["quantity"]), base.quantity);
+    const unit = getImportedCell(row, ["unit"]) || base.unit;
+    const desiredAmount = Math.max(parseImportNumber(getImportedCell(row, ["desired_amount", "desiredamount", "desired"]), base.desiredAmount), 0);
+    const thresholdModeRaw = getImportedCell(row, ["threshold_mode", "thresholdmode"]);
+    const thresholdMode = thresholdModeRaw ? normalizeThresholdMode(thresholdModeRaw) : base.thresholdMode;
+    const importedThresholdUnits = parseImportNumber(getImportedCell(row, ["low_stock_threshold", "lowstockthreshold", "threshold"]), base.threshold);
+    const importedThresholdPercentRaw = getImportedCell(row, ["threshold_percent", "thresholdpercent"]);
+    const thresholdPercent = thresholdMode === "percent"
+      ? Math.max(0, importedThresholdPercentRaw !== ""
+          ? Number(importedThresholdPercentRaw)
+          : desiredAmount > 0 && importedThresholdUnits !== ""
+            ? roundInventoryValue((Number(importedThresholdUnits || 0) / desiredAmount) * 100)
+            : Number(base.thresholdPercent || 25))
+      : desiredAmount > 0
+        ? roundInventoryValue((Number(importedThresholdUnits || 0) / desiredAmount) * 100)
+        : Number(base.thresholdPercent || 25);
+    const threshold = thresholdMode === "percent"
+      ? roundInventoryValue((desiredAmount * thresholdPercent) / 100)
+      : Number(importedThresholdUnits || 0);
+    const priorityRaw = getImportedCell(row, ["priority"]);
+    const tags = parseImportTags(getImportedCell(row, ["tags"]), base.tags || []);
+    const notesCell = getImportedCell(row, ["notes"]);
+    const nutritionServingAmountCell = getImportedCell(row, ["nutrition_serving_amount", "nutritionservingamount"]);
+    const nutritionServingUnitCell = getImportedCell(row, ["nutrition_serving_unit", "nutritionservingunit"]);
+    const caloriesCell = getImportedCell(row, ["calories"]);
+    const proteinCell = getImportedCell(row, ["protein_g", "proteing"]);
+    const carbsCell = getImportedCell(row, ["carbs_g", "carbsg"]);
+    const fatCell = getImportedCell(row, ["fat_g", "fatg"]);
+
+    const merged = {
+      ...base,
+      id: existing?.id || crypto.randomUUID(),
+      itemName,
+      category,
+      quantity,
+      unit,
+      desiredAmount: desiredAmount > 0 ? desiredAmount : base.desiredAmount,
+      thresholdMode,
+      thresholdPercent,
+      threshold,
+      notes: notesCell !== "" ? notesCell : base.notes,
+      priority: priorityRaw ? normalizePriority(priorityRaw) : base.priority,
+      tags,
+      nutritionServingAmount: nutritionServingAmountCell !== "" ? Number(nutritionServingAmountCell) : base.nutritionServingAmount,
+      nutritionServingUnit: nutritionServingUnitCell !== "" ? nutritionServingUnitCell : base.nutritionServingUnit,
+      calories: caloriesCell !== "" ? Number(caloriesCell) : base.calories,
+      proteinG: proteinCell !== "" ? Number(proteinCell) : base.proteinG,
+      carbsG: carbsCell !== "" ? Number(carbsCell) : base.carbsG,
+      fatG: fatCell !== "" ? Number(fatCell) : base.fatG
+    };
+
+    if (existing) {
+      const existingIndex = nextItems.findIndex((item) => item.id === existing.id);
+      nextItems.splice(existingIndex, 1, merged);
+      updated += 1;
+    } else {
+      nextItems.unshift(merged);
+      created += 1;
+    }
+
+    existingByName.set(normalizedName, merged);
+  });
+
+  return {
+    items: normalizeInventory(nextItems),
+    created,
+    updated,
+    skipped
+  };
+}
+
+function mergeRecipeImportRows(rows, currentRecipes) {
+  const existingByName = new Map(currentRecipes.map((recipe) => [recipe.recipeName.trim().toLowerCase(), recipe]));
+  const nextRecipes = [...currentRecipes];
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  rows.forEach((row) => {
+    const recipeName = getImportedCell(row, ["recipe_name", "recipename", "name"]);
+    if (!recipeName) {
+      skipped += 1;
+      return;
+    }
+
+    const normalizedName = recipeName.trim().toLowerCase();
+    const existing = existingByName.get(normalizedName);
+    const structuredIngredientsRaw = getImportedCell(row, ["structured_ingredients", "structuredingredients"]);
+    const importedStructuredIngredients = parseStructuredIngredientsCell(structuredIngredientsRaw);
+    const importedIngredients = getImportedCell(row, ["ingredients"]);
+    const importedTags = parseImportTags(getImportedCell(row, ["tags"]), existing?.tags || []);
+
+    const merged = {
+      id: existing?.id || crypto.randomUUID(),
+      recipeName,
+      category: getImportedCell(row, ["category"]) || existing?.category || "Lunch and Dinner",
+      difficulty: getImportedCell(row, ["difficulty"]) || existing?.difficulty || "Easy",
+      prepTime: getImportedCell(row, ["prep_time", "preptime"]) || existing?.prepTime || "",
+      servings: Math.max(parseImportNumber(getImportedCell(row, ["servings", "serving_count", "servingcount"]), existing?.servings || 1), 1),
+      structuredIngredients: importedStructuredIngredients.length ? importedStructuredIngredients : normalizeStructuredIngredients(existing?.structuredIngredients || []),
+      ingredients: importedIngredients || (importedStructuredIngredients.length ? importedStructuredIngredients.map((ingredient) => formatStructuredIngredient(ingredient)).join(", ") : existing?.ingredients || ""),
+      steps: getImportedCell(row, ["steps"]) || existing?.steps || "",
+      notes: getImportedCell(row, ["notes"]) || existing?.notes || "",
+      imageUrl: getImportedCell(row, ["image_url", "imageurl"]) || existing?.imageUrl || "",
+      tags: importedTags
+    };
+
+    if (existing) {
+      const existingIndex = nextRecipes.findIndex((recipe) => recipe.id === existing.id);
+      nextRecipes.splice(existingIndex, 1, merged);
+      updated += 1;
+    } else {
+      nextRecipes.unshift(merged);
+      created += 1;
+    }
+
+    existingByName.set(normalizedName, merged);
+  });
+
+  return {
+    items: normalizeRecipes(nextRecipes),
+    created,
+    updated,
+    skipped
+  };
+}
+
 function normalizeRecipeCategory(category) {
   if (category === "Lunch" || category === "Dinner") {
     return "Lunch and Dinner";
@@ -2335,6 +2613,10 @@ function App() {
   const [isInventoryFormOpen, setIsInventoryFormOpen] = useState(false);
   const [isGroceryFormOpen, setIsGroceryFormOpen] = useState(false);
   const [isFoodLogFormOpen, setIsFoodLogFormOpen] = useState(false);
+  const [inventoryImportFeedback, setInventoryImportFeedback] = useState("");
+  const [recipeImportFeedback, setRecipeImportFeedback] = useState("");
+  const [isInventoryImportHelpOpen, setIsInventoryImportHelpOpen] = useState(false);
+  const [isRecipeImportHelpOpen, setIsRecipeImportHelpOpen] = useState(false);
   const [focusedRecipeId, setFocusedRecipeId] = useState(null);
   const [menuSearchFilter, setMenuSearchFilter] = useState("");
   const [menuSearchTerms, setMenuSearchTerms] = useState([]);
@@ -2361,6 +2643,8 @@ function App() {
   const inventoryFormSectionRef = useRef(null);
   const groceryFormSectionRef = useRef(null);
   const foodLogFormSectionRef = useRef(null);
+  const recipeImportInputRef = useRef(null);
+  const inventoryImportInputRef = useRef(null);
 
   useEffect(() => {
     supabaseClient.auth.getSession().then(({ data }) => {
@@ -3068,6 +3352,71 @@ function App() {
     setEditingFoodLogId(null);
     setFoodLogForm(emptyFoodLog());
     setIsFoodLogFormOpen(false);
+  }
+
+
+  async function importInventoryCSV(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const rows = parseCSVText(await file.text());
+      if (!rows.length) {
+        throw new Error("No usable CSV rows were found.");
+      }
+      const result = mergeInventoryImportRows(rows, inventory);
+      setInventory(result.items);
+      setInventoryImportFeedback(
+        "Imported " +
+          (result.created + result.updated) +
+          " inventory item" +
+          (result.created + result.updated !== 1 ? "s" : "") +
+          " (" +
+          result.created +
+          " new, " +
+          result.updated +
+          " updated" +
+          (result.skipped ? ", " + result.skipped + " skipped" : "") +
+          ")."
+      );
+    } catch (error) {
+      console.error("Inventory CSV import failed", error);
+      setInventoryImportFeedback("Inventory import failed: " + (error.message || "Please check the CSV format and try again."));
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function importRecipeCSV(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const rows = parseCSVText(await file.text());
+      if (!rows.length) {
+        throw new Error("No usable CSV rows were found.");
+      }
+      const result = mergeRecipeImportRows(rows, recipes);
+      setRecipes(result.items);
+      setRecipeImportFeedback(
+        "Imported " +
+          (result.created + result.updated) +
+          " recipe" +
+          (result.created + result.updated !== 1 ? "s" : "") +
+          " (" +
+          result.created +
+          " new, " +
+          result.updated +
+          " updated" +
+          (result.skipped ? ", " + result.skipped + " skipped" : "") +
+          ")."
+      );
+    } catch (error) {
+      console.error("Recipe CSV import failed", error);
+      setRecipeImportFeedback("Recipe import failed: " + (error.message || "Please check the CSV format and try again."));
+    } finally {
+      event.target.value = "";
+    }
   }
 
   function saveRecipe(event) {
@@ -4236,11 +4585,36 @@ function App() {
               <Panel
               title={editingRecipeId ? "Edit Recipe" : "Add New Recipe"}
               action={
-                <SecondaryButton type="button" onClick={() => setIsRecipeFormOpen((current) => !current)}>
-                  {isRecipeFormOpen ? "Hide Form" : editingRecipeId ? "Open Form" : "Add Recipe"}
-                </SecondaryButton>
+                <div className="flex flex-wrap gap-2">
+                  <input ref={recipeImportInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={importRecipeCSV} />
+                  <SecondaryButton type="button" onClick={() => recipeImportInputRef.current?.click()}>
+                    Import CSV
+                  </SecondaryButton>
+                  <SecondaryButton type="button" onClick={() => setIsRecipeFormOpen((current) => !current)}>
+                    {isRecipeFormOpen ? "Hide Form" : editingRecipeId ? "Open Form" : "Add Recipe"}
+                  </SecondaryButton>
+                </div>
               }
             >
+              <div className="mb-4 rounded-[1.25rem] border border-kitchen-sage/60 bg-kitchen-cream/70 px-4 py-3 text-sm text-slate-700">
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsRecipeImportHelpOpen((current) => !current)}
+                    className="text-sm font-medium text-kitchen-moss underline underline-offset-4 transition hover:text-kitchen-leaf"
+                  >
+                    {isRecipeImportHelpOpen ? "Hide import format" : "Import format help"}
+                  </button>
+                  {recipeImportFeedback ? <p className="text-xs font-medium text-kitchen-leaf">{recipeImportFeedback}</p> : null}
+                </div>
+                {isRecipeImportHelpOpen ? (
+                  <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+                    <p>Recipe CSV import merges by recipe name.</p>
+                    <p>Suggested columns: recipe_name, category, difficulty, prep_time, servings, ingredients, steps, notes, image_url, tags, structured_ingredients.</p>
+                    <p>For structured ingredients use a cell like <span className="font-mono">Paneer|200|g;Ginger|2|piece</span>.</p>
+                  </div>
+                ) : null}
+              </div>
               {isRecipeFormOpen ? (
                 <form onSubmit={saveRecipe} className="grid gap-4 md:grid-cols-2">
                   <InputField label="Recipe Name" value={recipeForm.recipeName} onChange={(value) => setRecipeForm({ ...recipeForm, recipeName: value })} required />
@@ -4491,11 +4865,35 @@ function App() {
               <Panel
               title={editingInventoryId ? "Edit Inventory Item" : "Add New Inventory"}
               action={
-                <SecondaryButton type="button" onClick={() => setIsInventoryFormOpen((current) => !current)}>
-                  {isInventoryFormOpen ? "Hide Form" : editingInventoryId ? "Open Form" : "Add Inventory"}
-                </SecondaryButton>
+                <div className="flex flex-wrap gap-2">
+                  <input ref={inventoryImportInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={importInventoryCSV} />
+                  <SecondaryButton type="button" onClick={() => inventoryImportInputRef.current?.click()}>
+                    Import CSV
+                  </SecondaryButton>
+                  <SecondaryButton type="button" onClick={() => setIsInventoryFormOpen((current) => !current)}>
+                    {isInventoryFormOpen ? "Hide Form" : editingInventoryId ? "Open Form" : "Add Inventory"}
+                  </SecondaryButton>
+                </div>
               }
             >
+              <div className="mb-4 rounded-[1.25rem] border border-kitchen-sage/60 bg-kitchen-cream/70 px-4 py-3 text-sm text-slate-700">
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsInventoryImportHelpOpen((current) => !current)}
+                    className="text-sm font-medium text-kitchen-moss underline underline-offset-4 transition hover:text-kitchen-leaf"
+                  >
+                    {isInventoryImportHelpOpen ? "Hide import format" : "Import format help"}
+                  </button>
+                  {inventoryImportFeedback ? <p className="text-xs font-medium text-kitchen-leaf">{inventoryImportFeedback}</p> : null}
+                </div>
+                {isInventoryImportHelpOpen ? (
+                  <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+                    <p>Inventory CSV import merges by item name.</p>
+                    <p>Suggested columns: item_name, category, quantity, unit, desired_amount, threshold_mode, threshold_percent, low_stock_threshold, priority, tags, notes, nutrition_serving_amount, nutrition_serving_unit, calories, protein_g, carbs_g, fat_g.</p>
+                  </div>
+                ) : null}
+              </div>
               {isInventoryFormOpen ? (
                 <form onSubmit={saveInventory} className="grid gap-4 md:grid-cols-2">
                   <InputField label="Item Name" value={inventoryForm.itemName} onChange={(value) => setInventoryForm({ ...inventoryForm, itemName: value })} required />
