@@ -12,7 +12,8 @@ const STORAGE_KEYS = {
   grocery: "kitchen-companion-grocery-v5",
   chopboard: "kitchen-companion-chopboard-v1",
   foodLog: "kitchen-companion-food-log-v1",
-  dailyNutritionGoals: "kitchen-companion-daily-nutrition-goals-v1"
+  dailyNutritionGoals: "kitchen-companion-daily-nutrition-goals-v1",
+  householdNotes: "kitchen-companion-household-notes-v1"
 };
 
 const INVENTORY_CATEGORIES = [
@@ -83,6 +84,7 @@ const PRIORITY_OPTIONS = [
 
 const SERVING_SIZE_OPTIONS = [1, 2, 4, 6];
 const SUBSTITUTE_ALERT_GROUP_TAGS = ["Lentil Group", "Bean Group", "Chicken Group"];
+const AUTO_SIGN_OUT_AFTER_MS = 30 * 60 * 1000;
 
 function normalizePriority(priority) {
   const normalized = String(priority || "").trim().toLowerCase();
@@ -2172,6 +2174,13 @@ function defaultDailyNutritionGoals() {
   };
 }
 
+function defaultHouseholdNotes() {
+  return {
+    forHusband: "",
+    heatAndEat: ""
+  };
+}
+
 function normalizeDailyNutritionGoals(data) {
   const defaults = defaultDailyNutritionGoals();
   return {
@@ -2179,6 +2188,14 @@ function normalizeDailyNutritionGoals(data) {
     proteinG: Math.max(Number(data?.proteinG ?? data?.protein_g ?? defaults.proteinG) || defaults.proteinG, 0),
     carbsG: Math.max(Number(data?.carbsG ?? data?.carbs_g ?? defaults.carbsG) || defaults.carbsG, 0),
     fatG: Math.max(Number(data?.fatG ?? data?.fat_g ?? defaults.fatG) || defaults.fatG, 0)
+  };
+}
+
+function normalizeHouseholdNotes(data) {
+  const defaults = defaultHouseholdNotes();
+  return {
+    forHusband: String(data?.forHusband ?? data?.for_husband_note ?? defaults.forHusband).trim(),
+    heatAndEat: String(data?.heatAndEat ?? data?.heat_and_eat_note ?? defaults.heatAndEat).trim()
   };
 }
 
@@ -2332,13 +2349,16 @@ function foodLogToRow(entry, householdId, userId) {
   };
 }
 
-function dailyNutritionGoalsToRow(goals, householdId) {
+function dailyNutritionGoalsToRow(goals, householdId, notes = defaultHouseholdNotes()) {
+  const normalizedNotes = normalizeHouseholdNotes(notes);
   return {
     household_id: householdId,
     calories_goal: Math.max(Number(goals?.calories || 0) || 0, 0),
     protein_g_goal: Math.max(Number(goals?.proteinG || 0) || 0, 0),
     carbs_g_goal: Math.max(Number(goals?.carbsG || 0) || 0, 0),
-    fat_g_goal: Math.max(Number(goals?.fatG || 0) || 0, 0)
+    fat_g_goal: Math.max(Number(goals?.fatG || 0) || 0, 0),
+    for_husband_note: normalizedNotes.forHusband,
+    heat_and_eat_note: normalizedNotes.heatAndEat
   };
 }
 
@@ -2549,6 +2569,28 @@ function getInventoryExcludeTerms(item) {
   ].map((term) => String(term || "").trim()).filter(Boolean)));
 }
 
+function getGrocerySearchBlob(item) {
+  return [
+    item.itemName,
+    item.category,
+    item.unit,
+    item.priority,
+    item.source,
+    item.bought ? "bought" : "open"
+  ].join(" ").toLowerCase();
+}
+
+function getGroceryExcludeTerms(item) {
+  return Array.from(new Set([
+    item.itemName,
+    item.category,
+    item.unit,
+    item.priority,
+    item.source,
+    item.bought ? "Bought" : "Open"
+  ].map((term) => String(term || "").trim()).filter(Boolean)));
+}
+
 function matchesExcludedTerms(blob, excludedTerms) {
   if (!excludedTerms.length) return false;
   return excludedTerms.some((term) => blob.includes(toSearchText(term)));
@@ -2587,6 +2629,7 @@ function App() {
   const [chopboardItems, setChopboardItems] = useState(() => normalizeChopboardSession(readStorage(STORAGE_KEYS.chopboard, [])));
   const [foodLog, setFoodLog] = useState(() => normalizeFoodLog(readStorage(STORAGE_KEYS.foodLog, [])));
   const [dailyNutritionGoals, setDailyNutritionGoals] = useState(() => normalizeDailyNutritionGoals(readStorage(STORAGE_KEYS.dailyNutritionGoals, defaultDailyNutritionGoals())));
+  const [householdNotes, setHouseholdNotes] = useState(() => normalizeHouseholdNotes(readStorage(STORAGE_KEYS.householdNotes, defaultHouseholdNotes())));
   const [notificationPermission, setNotificationPermission] = useState(
     typeof Notification === "undefined" ? "unsupported" : Notification.permission
   );
@@ -2597,6 +2640,7 @@ function App() {
   const [isHydratingData, setIsHydratingData] = useState(false);
   const [hasRemoteDataLoaded, setHasRemoteDataLoaded] = useState(false);
   const [remoteLoadError, setRemoteLoadError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
   const [authForm, setAuthForm] = useState({ email: "", password: "" });
 
   const [recipeForm, setRecipeForm] = useState(emptyRecipe());
@@ -2613,10 +2657,12 @@ function App() {
   const [isInventoryFormOpen, setIsInventoryFormOpen] = useState(false);
   const [isGroceryFormOpen, setIsGroceryFormOpen] = useState(false);
   const [isFoodLogFormOpen, setIsFoodLogFormOpen] = useState(false);
+  const [isHouseholdNotesEditorOpen, setIsHouseholdNotesEditorOpen] = useState(false);
   const [inventoryImportFeedback, setInventoryImportFeedback] = useState("");
   const [recipeImportFeedback, setRecipeImportFeedback] = useState("");
   const [isInventoryImportHelpOpen, setIsInventoryImportHelpOpen] = useState(false);
   const [isRecipeImportHelpOpen, setIsRecipeImportHelpOpen] = useState(false);
+  const [showImportFeedbackAsBanner, setShowImportFeedbackAsBanner] = useState(true);
   const [focusedRecipeId, setFocusedRecipeId] = useState(null);
   const [menuSearchFilter, setMenuSearchFilter] = useState("");
   const [menuSearchTerms, setMenuSearchTerms] = useState([]);
@@ -2634,11 +2680,17 @@ function App() {
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState("All");
   const [inventoryExcludeInput, setInventoryExcludeInput] = useState("");
   const [inventoryExcludedTerms, setInventoryExcludedTerms] = useState([]);
+  const [grocerySearchFilter, setGrocerySearchFilter] = useState("");
+  const [grocerySearchTerms, setGrocerySearchTerms] = useState([]);
+  const [groceryCategoryFilter, setGroceryCategoryFilter] = useState("All");
+  const [groceryExcludeInput, setGroceryExcludeInput] = useState("");
+  const [groceryExcludedTerms, setGroceryExcludedTerms] = useState([]);
   const [isShoppingSignalOpen, setIsShoppingSignalOpen] = useState(true);
   const [isLowAlertsOpen, setIsLowAlertsOpen] = useState(true);
 
   const previousAlertItemsRef = useRef(new Set());
   const remoteSyncTimeoutRef = useRef(null);
+  const inactivitySignOutTimeoutRef = useRef(null);
   const recipeFormSectionRef = useRef(null);
   const inventoryFormSectionRef = useRef(null);
   const groceryFormSectionRef = useRef(null);
@@ -2670,6 +2722,49 @@ function App() {
   useEffect(() => writeStorage(STORAGE_KEYS.chopboard, chopboardItems), [chopboardItems]);
   useEffect(() => writeStorage(STORAGE_KEYS.foodLog, foodLog), [foodLog]);
   useEffect(() => writeStorage(STORAGE_KEYS.dailyNutritionGoals, dailyNutritionGoals), [dailyNutritionGoals]);
+  useEffect(() => writeStorage(STORAGE_KEYS.householdNotes, householdNotes), [householdNotes]);
+
+  useEffect(() => {
+    if (inactivitySignOutTimeoutRef.current) {
+      clearTimeout(inactivitySignOutTimeoutRef.current);
+      inactivitySignOutTimeoutRef.current = null;
+    }
+
+    if (!session || !currentUser) {
+      return undefined;
+    }
+
+    const resetInactivityTimer = () => {
+      if (inactivitySignOutTimeoutRef.current) {
+        clearTimeout(inactivitySignOutTimeoutRef.current);
+      }
+
+      inactivitySignOutTimeoutRef.current = setTimeout(async () => {
+        setAuthNotice("Signed out automatically after 30 minutes of inactivity.");
+        const { error } = await supabaseClient.auth.signOut();
+        if (error) {
+          alert(error.message);
+        }
+      }, AUTO_SIGN_OUT_AFTER_MS);
+    };
+
+    const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"];
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, resetInactivityTimer, { passive: true });
+    });
+
+    resetInactivityTimer();
+
+    return () => {
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, resetInactivityTimer, { passive: true });
+      });
+      if (inactivitySignOutTimeoutRef.current) {
+        clearTimeout(inactivitySignOutTimeoutRef.current);
+        inactivitySignOutTimeoutRef.current = null;
+      }
+    };
+  }, [session, currentUser]);
 
   function scrollToSection(sectionRef) {
     requestAnimationFrame(() => {
@@ -2737,7 +2832,7 @@ function App() {
             .order("consumed_at", { ascending: false }),
           supabaseClient
             .from("household_settings")
-            .select("household_id, calories_goal, protein_g_goal, carbs_g_goal, fat_g_goal")
+            .select("household_id, calories_goal, protein_g_goal, carbs_g_goal, fat_g_goal, for_husband_note, heat_and_eat_note")
             .eq("household_id", nextHouseholdId)
             .maybeSingle()
         ]);
@@ -2818,6 +2913,12 @@ function App() {
               fatG: nutritionGoalsResponse.data.fat_g_goal
             })
           : null;
+        const remoteHouseholdNotes = nutritionGoalsResponse.data
+          ? normalizeHouseholdNotes({
+              for_husband_note: nutritionGoalsResponse.data.for_husband_note,
+              heat_and_eat_note: nutritionGoalsResponse.data.heat_and_eat_note
+            })
+          : null;
 
         const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0 || remoteFoodLog.length > 0 || Boolean(remoteDailyNutritionGoals);
 
@@ -2827,6 +2928,7 @@ function App() {
           const seededGrocery = grocery;
           const seededFoodLog = foodLog;
           const seededDailyNutritionGoals = dailyNutritionGoals;
+          const seededHouseholdNotes = householdNotes;
 
           const seedResponses = await Promise.all([
             seededRecipes.length
@@ -2841,7 +2943,7 @@ function App() {
             seededFoodLog.length
               ? supabaseClient.from("food_log_entries").insert(seededFoodLog.map((entry) => foodLogToRow(entry, nextHouseholdId, currentUser.id)))
               : Promise.resolve({ error: null }),
-            supabaseClient.from("household_settings").upsert(dailyNutritionGoalsToRow(seededDailyNutritionGoals, nextHouseholdId), { onConflict: "household_id" })
+            supabaseClient.from("household_settings").upsert(dailyNutritionGoalsToRow(seededDailyNutritionGoals, nextHouseholdId, seededHouseholdNotes), { onConflict: "household_id" })
           ]);
 
           const seedError = seedResponses.find((response) => response?.error)?.error;
@@ -2858,6 +2960,7 @@ function App() {
           setGrocery(seededGrocery);
           setFoodLog(seededFoodLog);
           setDailyNutritionGoals(seededDailyNutritionGoals);
+          setHouseholdNotes(seededHouseholdNotes);
         } else {
           setRecipes(mergeSeedRecipes(remoteRecipes, normalizeRecipes(defaultRecipes)));
           setInventory(remoteInventory);
@@ -2865,6 +2968,9 @@ function App() {
           setFoodLog(remoteFoodLog);
           if (remoteDailyNutritionGoals) {
             setDailyNutritionGoals(remoteDailyNutritionGoals);
+          }
+          if (remoteHouseholdNotes) {
+            setHouseholdNotes(remoteHouseholdNotes);
           }
         }
 
@@ -2953,7 +3059,7 @@ function App() {
         syncTable("inventory_items", inventory.map((item) => inventoryToRow(item, householdId))),
         syncTable("grocery_items", grocery.map((item) => groceryToRow(item, householdId))),
         syncTable("food_log_entries", foodLog.map((entry) => foodLogToRow(entry, householdId, currentUser?.id))),
-        supabaseClient.from("household_settings").upsert(dailyNutritionGoalsToRow(dailyNutritionGoals, householdId), { onConflict: "household_id" })
+        supabaseClient.from("household_settings").upsert(dailyNutritionGoalsToRow(dailyNutritionGoals, householdId, householdNotes), { onConflict: "household_id" })
       ]);
 
       const syncError = syncResponses.find((response) => response?.error)?.error;
@@ -2967,7 +3073,7 @@ function App() {
         clearTimeout(remoteSyncTimeoutRef.current);
       }
     };
-  }, [currentUser, householdId, hasRemoteDataLoaded, isHydratingData, recipes, inventory, grocery, foodLog, dailyNutritionGoals]);
+  }, [currentUser, householdId, hasRemoteDataLoaded, isHydratingData, recipes, inventory, grocery, foodLog, dailyNutritionGoals, householdNotes]);
 
   const inventoryWithStatus = useMemo(
     () => inventory.map((item) => {
@@ -3050,6 +3156,16 @@ function App() {
     [inventoryWithStatus]
   );
 
+  const visibleGroceryItems = useMemo(
+    () => grocery.filter((item) => !item.suppressed),
+    [grocery]
+  );
+
+  const groceryCategories = useMemo(
+    () => ["All", ...new Set(visibleGroceryItems.map((item) => item.category).filter(Boolean))],
+    [visibleGroceryItems]
+  );
+
   const menuSearchSuggestions = useMemo(() => {
     const searchText = toSearchText(menuSearchFilter);
     if (!searchText) return [];
@@ -3080,6 +3196,16 @@ function App() {
       .slice(0, 8);
   }, [inventoryWithStatus, inventorySearchFilter, inventorySearchTerms]);
 
+  const grocerySearchSuggestions = useMemo(() => {
+    const searchText = toSearchText(grocerySearchFilter);
+    if (!searchText) return [];
+
+    return Array.from(new Set(visibleGroceryItems.flatMap((item) => getGroceryExcludeTerms(item))))
+      .filter((term) => toSearchText(term).includes(searchText))
+      .filter((term) => !grocerySearchTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
+      .slice(0, 8);
+  }, [visibleGroceryItems, grocerySearchFilter, grocerySearchTerms]);
+
   const menuExcludeSuggestions = useMemo(() => {
     const searchText = toSearchText(menuExcludeInput);
     if (!searchText) return [];
@@ -3109,6 +3235,16 @@ function App() {
       .filter((term) => !inventoryExcludedTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
       .slice(0, 8);
   }, [inventoryWithStatus, inventoryExcludeInput, inventoryExcludedTerms]);
+
+  const groceryExcludeSuggestions = useMemo(() => {
+    const searchText = toSearchText(groceryExcludeInput);
+    if (!searchText) return [];
+
+    return Array.from(new Set(visibleGroceryItems.flatMap((item) => getGroceryExcludeTerms(item))))
+      .filter((term) => toSearchText(term).includes(searchText))
+      .filter((term) => !groceryExcludedTerms.some((selected) => toSearchText(selected) === toSearchText(term)))
+      .slice(0, 8);
+  }, [visibleGroceryItems, groceryExcludeInput, groceryExcludedTerms]);
 
   const groceryItemSuggestions = useMemo(() => {
     const searchText = toSearchText(groceryForm.itemName);
@@ -3169,6 +3305,35 @@ function App() {
       return categoryMatch && searchMatch && chipMatch && !excluded;
     }),
     [inventoryWithStatus, inventoryCategoryFilter, inventorySearchFilter, inventorySearchTerms, inventoryExcludedTerms]
+  );
+
+  const filteredGroceryItems = useMemo(
+    () => visibleGroceryItems.filter((item) => {
+      const categoryMatch = groceryCategoryFilter === "All" || item.category === groceryCategoryFilter;
+      const searchText = toSearchText(grocerySearchFilter);
+      const searchBlob = getGrocerySearchBlob(item);
+      const searchMatch = !searchText || searchBlob.includes(searchText);
+      const chipMatch = grocerySearchTerms.every((term) => searchBlob.includes(toSearchText(term)));
+      const excluded = matchesExcludedTerms(searchBlob, groceryExcludedTerms);
+      return categoryMatch && searchMatch && chipMatch && !excluded;
+    }),
+    [visibleGroceryItems, groceryCategoryFilter, grocerySearchFilter, grocerySearchTerms, groceryExcludedTerms]
+  );
+
+  const householdHeatAndEatLines = useMemo(
+    () => String(householdNotes.heatAndEat || "")
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+    [householdNotes]
+  );
+
+  const householdEasyMakeLines = useMemo(
+    () => String(householdNotes.forHusband || "")
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+    [householdNotes]
   );
 
   const chopboardSessionItems = useMemo(
@@ -3296,6 +3461,7 @@ function App() {
   }, [alertItems]);
 
   async function signInWithPassword(email, password) {
+    setAuthNotice("");
     const { error } = await supabaseClient.auth.signInWithPassword({
       email,
       password
@@ -3307,6 +3473,10 @@ function App() {
   }
 
   async function signOutUser() {
+    if (inactivitySignOutTimeoutRef.current) {
+      clearTimeout(inactivitySignOutTimeoutRef.current);
+      inactivitySignOutTimeoutRef.current = null;
+    }
     const { error } = await supabaseClient.auth.signOut();
     if (error) {
       alert(error.message);
@@ -3366,6 +3536,7 @@ function App() {
       }
       const result = mergeInventoryImportRows(rows, inventory);
       setInventory(result.items);
+      setShowImportFeedbackAsBanner(true);
       setInventoryImportFeedback(
         "Imported " +
           (result.created + result.updated) +
@@ -3398,6 +3569,7 @@ function App() {
       }
       const result = mergeRecipeImportRows(rows, recipes);
       setRecipes(result.items);
+      setShowImportFeedbackAsBanner(true);
       setRecipeImportFeedback(
         "Imported " +
           (result.created + result.updated) +
@@ -4087,6 +4259,11 @@ function App() {
                     Sign in to access your shared recipes, pantry tracking, and grocery planning.
                   </p>
                 </div>
+                {authNotice ? (
+                  <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    {authNotice}
+                  </div>
+                ) : null}
                 <form onSubmit={handleSignIn} className="grid gap-4 md:grid-cols-2">
                 <InputField
                   label="Email"
@@ -4202,7 +4379,93 @@ function App() {
               />
             </section>
 
-            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
+            <div className="space-y-6">
+              <Panel
+                title="Easy Meal Notes"
+                action={
+                  <SecondaryButton type="button" onClick={() => setIsHouseholdNotesEditorOpen((current) => !current)}>
+                    {isHouseholdNotesEditorOpen ? "Done" : "Edit Notes"}
+                  </SecondaryButton>
+                }
+              >
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="overflow-hidden rounded-[1.75rem] border border-kitchen-sage/60 bg-[radial-gradient(circle_at_top_left,_rgba(255,244,232,0.98),_rgba(255,255,255,0.95)_48%,_rgba(224,239,247,0.74))] p-5 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <span className="inline-flex rounded-full bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-kitchen-leaf shadow-sm">Heat & Eat</span>
+                        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Meals that are already ready to warm up and enjoy.</p>
+                      </div>
+                      <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-kitchen-moss shadow-sm">Ready now</span>
+                    </div>
+                    {householdHeatAndEatLines.length ? (
+                      <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 shadow-sm">
+                        <div className="space-y-2">
+                          {householdHeatAndEatLines.map((line, index) => (
+                            <div key={`${line}-${index}`} className="flex items-start gap-3 text-sm text-slate-700">
+                              <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-kitchen-leaf/80 shadow-sm" />
+                              <span className="leading-6">{line}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 text-sm text-slate-500 shadow-sm">
+                        Add a few ready-to-warm meals here.
+                      </div>
+                    )}
+                    {isHouseholdNotesEditorOpen || !householdHeatAndEatLines.length ? (
+                      <textarea
+                        value={householdNotes.heatAndEat}
+                        onChange={(event) => setHouseholdNotes((current) => ({ ...current, heatAndEat: event.target.value }))}
+                        placeholder="Examples:
+Frozen momos
+Paneer curry
+Soup"
+                        className="mt-5 min-h-[170px] w-full rounded-[1.35rem] border border-white/80 bg-white/92 px-4 py-4 text-sm leading-6 text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-kitchen-leaf focus:ring-2 focus:ring-kitchen-leaf/20"
+                      />
+                    ) : null}
+                  </div>
+
+                  <div className="overflow-hidden rounded-[1.75rem] border border-kitchen-sage/60 bg-[radial-gradient(circle_at_top_left,_rgba(236,248,232,0.98),_rgba(255,255,255,0.95)_48%,_rgba(245,240,228,0.74))] p-5 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <span className="inline-flex rounded-full bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-kitchen-leaf shadow-sm">Easy to Make</span>
+                        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Quick simple options that can be made easily, like avocado bread, yogurt, or toast.</p>
+                      </div>
+                      <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-kitchen-moss shadow-sm">Simple option</span>
+                    </div>
+                    {householdEasyMakeLines.length ? (
+                      <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 shadow-sm">
+                        <div className="space-y-2">
+                          {householdEasyMakeLines.map((line, index) => (
+                            <div key={`${line}-${index}`} className="flex items-start gap-3 text-sm text-slate-700">
+                              <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-kitchen-leaf/80 shadow-sm" />
+                              <span className="leading-6">{line}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 text-sm text-slate-500 shadow-sm">
+                        Add a few easy make-at-home ideas here.
+                      </div>
+                    )}
+                    {isHouseholdNotesEditorOpen || !householdEasyMakeLines.length ? (
+                      <textarea
+                        value={householdNotes.forHusband}
+                        onChange={(event) => setHouseholdNotes((current) => ({ ...current, forHusband: event.target.value }))}
+                        placeholder="Examples:
+Avocado bread
+Yogurt with fruit
+Toast and tea"
+                        className="mt-5 min-h-[170px] w-full rounded-[1.35rem] border border-white/80 bg-white/92 px-4 py-4 text-sm leading-6 text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-kitchen-leaf focus:ring-2 focus:ring-kitchen-leaf/20"
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              </Panel>
+
+              <section className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
               <Panel
                 title="Today’s Health Snapshot"
                 action={
@@ -4251,6 +4514,7 @@ function App() {
                 )}
               </Panel>
             </section>
+            </div>
 
             <section className="overflow-hidden rounded-[2rem] border border-kitchen-sage bg-[radial-gradient(circle_at_top_left,_rgba(219,229,218,0.9),_rgba(247,247,243,1)_48%,_rgba(244,224,217,0.55))] px-6 py-6 shadow-soft">
               <div className="flex items-start justify-between gap-4">
@@ -4596,25 +4860,27 @@ function App() {
                 </div>
               }
             >
-              <div className="mb-4 rounded-[1.25rem] border border-kitchen-sage/60 bg-kitchen-cream/70 px-4 py-3 text-sm text-slate-700">
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsRecipeImportHelpOpen((current) => !current)}
-                    className="text-sm font-medium text-kitchen-moss underline underline-offset-4 transition hover:text-kitchen-leaf"
-                  >
-                    {isRecipeImportHelpOpen ? "Hide import format" : "Import format help"}
-                  </button>
-                  {recipeImportFeedback ? <p className="text-xs font-medium text-kitchen-leaf">{recipeImportFeedback}</p> : null}
-                </div>
-                {isRecipeImportHelpOpen ? (
-                  <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
-                    <p>Recipe CSV import merges by recipe name.</p>
-                    <p>Suggested columns: recipe_name, category, difficulty, prep_time, servings, ingredients, steps, notes, image_url, tags, structured_ingredients.</p>
-                    <p>For structured ingredients use a cell like <span className="font-mono">Paneer|200|g;Ginger|2|piece</span>.</p>
+              {(isRecipeImportHelpOpen || recipeImportFeedback) ? (
+                <div className="mb-4 rounded-[1.25rem] border border-kitchen-sage/60 bg-kitchen-cream/70 px-4 py-3 text-sm text-slate-700">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsRecipeImportHelpOpen((current) => !current)}
+                      className="text-sm font-medium text-kitchen-moss underline underline-offset-4 transition hover:text-kitchen-leaf"
+                    >
+                      {isRecipeImportHelpOpen ? "Hide import format" : "Import format help"}
+                    </button>
+                    {recipeImportFeedback ? <p className="text-xs font-medium text-kitchen-leaf">{recipeImportFeedback}</p> : null}
                   </div>
-                ) : null}
-              </div>
+                  {isRecipeImportHelpOpen ? (
+                    <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+                      <p>Recipe CSV import merges by recipe name.</p>
+                      <p>Suggested columns: recipe_name, category, difficulty, prep_time, servings, ingredients, steps, notes, image_url, tags, structured_ingredients.</p>
+                      <p>For structured ingredients use a cell like <span className="font-mono">Paneer|200|g;Ginger|2|piece</span>.</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {isRecipeFormOpen ? (
                 <form onSubmit={saveRecipe} className="grid gap-4 md:grid-cols-2">
                   <InputField label="Recipe Name" value={recipeForm.recipeName} onChange={(value) => setRecipeForm({ ...recipeForm, recipeName: value })} required />
@@ -4876,24 +5142,26 @@ function App() {
                 </div>
               }
             >
-              <div className="mb-4 rounded-[1.25rem] border border-kitchen-sage/60 bg-kitchen-cream/70 px-4 py-3 text-sm text-slate-700">
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsInventoryImportHelpOpen((current) => !current)}
-                    className="text-sm font-medium text-kitchen-moss underline underline-offset-4 transition hover:text-kitchen-leaf"
-                  >
-                    {isInventoryImportHelpOpen ? "Hide import format" : "Import format help"}
-                  </button>
-                  {inventoryImportFeedback ? <p className="text-xs font-medium text-kitchen-leaf">{inventoryImportFeedback}</p> : null}
-                </div>
-                {isInventoryImportHelpOpen ? (
-                  <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
-                    <p>Inventory CSV import merges by item name.</p>
-                    <p>Suggested columns: item_name, category, quantity, unit, desired_amount, threshold_mode, threshold_percent, low_stock_threshold, priority, tags, notes, nutrition_serving_amount, nutrition_serving_unit, calories, protein_g, carbs_g, fat_g.</p>
+              {(isInventoryImportHelpOpen || inventoryImportFeedback) ? (
+                <div className="mb-4 rounded-[1.25rem] border border-kitchen-sage/60 bg-kitchen-cream/70 px-4 py-3 text-sm text-slate-700">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsInventoryImportHelpOpen((current) => !current)}
+                      className="text-sm font-medium text-kitchen-moss underline underline-offset-4 transition hover:text-kitchen-leaf"
+                    >
+                      {isInventoryImportHelpOpen ? "Hide import format" : "Import format help"}
+                    </button>
+                    {inventoryImportFeedback ? <p className="text-xs font-medium text-kitchen-leaf">{inventoryImportFeedback}</p> : null}
                   </div>
-                ) : null}
-              </div>
+                  {isInventoryImportHelpOpen ? (
+                    <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+                      <p>Inventory CSV import merges by item name.</p>
+                      <p>Suggested columns: item_name, category, quantity, unit, desired_amount, threshold_mode, threshold_percent, low_stock_threshold, priority, tags, notes, nutrition_serving_amount, nutrition_serving_unit, calories, protein_g, carbs_g, fat_g.</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {isInventoryFormOpen ? (
                 <form onSubmit={saveInventory} className="grid gap-4 md:grid-cols-2">
                   <InputField label="Item Name" value={inventoryForm.itemName} onChange={(value) => setInventoryForm({ ...inventoryForm, itemName: value })} required />
@@ -5220,8 +5488,41 @@ function App() {
             </Panel>
             </div>
 
+            <Panel title="Find Grocery Items">
+              <div className="grid gap-4 md:grid-cols-2">
+                <SearchFilterField
+                  label="Search Grocery"
+                  value={grocerySearchFilter}
+                  onChange={setGrocerySearchFilter}
+                  suggestions={grocerySearchSuggestions}
+                  selectedValues={grocerySearchTerms}
+                  onAdd={(term) => setGrocerySearchTerms((current) => addUniqueFilterTerm(current, term))}
+                  onRemove={(term) => setGrocerySearchTerms((current) => removeFilterTerm(current, term))}
+                  placeholder="Bread, Produce, Essential..."
+                />
+                <SelectField
+                  label="Category"
+                  value={groceryCategoryFilter}
+                  onChange={setGroceryCategoryFilter}
+                  options={groceryCategories}
+                />
+              </div>
+              <div className="mt-4">
+                <ExcludeFilterField
+                  label="Exclude From Grocery"
+                  value={groceryExcludeInput}
+                  onChange={setGroceryExcludeInput}
+                  suggestions={groceryExcludeSuggestions}
+                  selectedValues={groceryExcludedTerms}
+                  onAdd={(term) => setGroceryExcludedTerms((current) => addUniqueFilterTerm(current, term))}
+                  onRemove={(term) => setGroceryExcludedTerms((current) => removeFilterTerm(current, term))}
+                  placeholder="Exclude an item name, category, or status"
+                />
+              </div>
+            </Panel>
+
             <div className="grid gap-4 lg:grid-cols-2">
-              {grocery.filter((item) => !item.suppressed).map((item) => (
+              {filteredGroceryItems.map((item) => (
                 <article key={item.id} className="rounded-[1.75rem] border border-kitchen-sage bg-white p-5 shadow-soft">
                   <div className="flex items-start justify-between gap-4">
                     <div>
