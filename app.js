@@ -17,28 +17,26 @@ const STORAGE_KEYS = {
 };
 
 const INVENTORY_CATEGORIES = [
-  "Produce",
-  "Dairy",
-  "Protein",
-  "Grains",
-  "Spices",
-  "Soup",
-  "Pantry",
+  "Fresh Produce",
+  "Refrigerated",
   "Frozen",
-  "Snacks",
+  "Pantry",
+  "Spices & Masalas",
+  "Nuts",
+  "Junk Food",
+  "Drinks",
   "General"
 ];
 
 const GROCERY_CATEGORIES = [
-  "Produce",
-  "Dairy",
-  "Protein",
-  "Grains",
-  "Spices",
-  "Soup",
-  "Pantry",
+  "Fresh Produce",
+  "Refrigerated",
   "Frozen",
-  "Snacks",
+  "Pantry",
+  "Spices & Masalas",
+  "Nuts",
+  "Junk Food",
+  "Drinks",
   "General"
 ];
 
@@ -102,6 +100,89 @@ function normalizePriority(priority) {
   return "Essential";
 }
 
+const SPICE_CATEGORY_KEYWORDS = [
+  "masala",
+  "cardamom",
+  "cloves",
+  "star anise",
+  "cinnamon",
+  "bay leaves",
+  "dried red chilli",
+  "dried red chilli",
+  "dried red chilies",
+  "dried red chillies"
+];
+
+const NUT_CATEGORY_KEYWORDS = [
+  "almond",
+  "walnut",
+  "cashew",
+  "nuts"
+];
+
+const JUNK_FOOD_CATEGORY_KEYWORDS = [
+  "rumpum noodles",
+  "rampum noodles",
+  "ramen"
+];
+
+const REFRIGERATED_CATEGORY_KEYWORDS = [
+  "ginger garlic paste",
+  "yogurt",
+  "paneer",
+  "eggs",
+  "butter"
+];
+
+function normalizeInventoryCategory(category, itemName = "", tags = []) {
+  const normalizedCategory = String(category || "").trim().toLowerCase();
+  const normalizedName = String(itemName || "").trim().toLowerCase();
+  const normalizedTags = (Array.isArray(tags) ? tags : [])
+    .map((tag) => String(tag || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  const hasSpiceSignals =
+    normalizedCategory === "spices" ||
+    normalizedCategory === "spice" ||
+    normalizedCategory === "spices & masalas" ||
+    normalizedTags.includes("spice") ||
+    normalizedTags.includes("spice blend") ||
+    SPICE_CATEGORY_KEYWORDS.some((keyword) => normalizedName.includes(keyword));
+
+  const hasNutSignals =
+    normalizedCategory === "nuts" ||
+    normalizedTags.includes("nuts") ||
+    normalizedTags.includes("nut") ||
+    NUT_CATEGORY_KEYWORDS.some((keyword) => normalizedName.includes(keyword));
+
+  const hasJunkFoodSignals =
+    normalizedCategory === "junk food" ||
+    normalizedTags.includes("junk food") ||
+    normalizedTags.includes("instant noodles") ||
+    JUNK_FOOD_CATEGORY_KEYWORDS.some((keyword) => normalizedName.includes(keyword));
+
+  const hasRefrigeratedSignals =
+    normalizedCategory === "dairy" ||
+    normalizedCategory === "refrigerated" ||
+    REFRIGERATED_CATEGORY_KEYWORDS.some((keyword) => normalizedName.includes(keyword));
+
+  if (hasSpiceSignals) return "Spices & Masalas";
+  if (hasNutSignals) return "Nuts";
+  if (hasJunkFoodSignals) return "Junk Food";
+  if (normalizedCategory === "produce" || normalizedCategory === "fresh produce") return "Fresh Produce";
+  if (hasRefrigeratedSignals) return "Refrigerated";
+  if (normalizedCategory === "frozen") return "Frozen";
+  if (normalizedCategory === "drink" || normalizedCategory === "drinks") return "Drinks";
+  if (
+    normalizedCategory === "protein" ||
+    normalizedCategory === "grains" ||
+    normalizedCategory === "snacks" ||
+    normalizedCategory === "soup" ||
+    normalizedCategory === "pantry"
+  ) return "Pantry";
+  return category || "General";
+}
+
 const RECIPE_IMAGE_BY_NAME = {
   "tea": "https://upload.wikimedia.org/wikipedia/commons/f/fd/A_Cup_of_Tea.jpg",
   "roti": "./assets/bread.jpg",
@@ -159,9 +240,14 @@ const RECIPE_IMAGE_BY_NAME = {
   "matar paneer": "https://upload.wikimedia.org/wikipedia/commons/4/4e/Matar_Paneer-homemade.jpg",
   "potatoes": "./assets/potatoes.jpg",
   "spiced potatoes": "./assets/mustang-aloo.jpg",
+  "spiced potatoes / mustang aalu": "./assets/mustang-aloo.jpg",
+  "mustang aalu": "./assets/mustang-aloo.jpg",
   "spiced aloo": "./assets/mustang-aloo.jpg",
   "mustang aloo": "./assets/mustang-aloo.jpg",
   "mustang alu": "./assets/mustang-aloo.jpg",
+  "mustaang aloo": "./assets/mustang-aloo.jpg",
+  "mustaang alloo": "./assets/mustang-aloo.jpg",
+  "mustaang alu": "./assets/mustang-aloo.jpg",
   "mustang": "./assets/mustang-aloo.jpg",
   "choila": "./assets/choila.jpg",
   "chatpate": "./assets/chatpate.jpg",
@@ -169,7 +255,7 @@ const RECIPE_IMAGE_BY_NAME = {
   "fried rice": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Egg_fried_rice.jpg?utm_campaign=index&utm_content=original&utm_source=commons.wikimedia.org",
   "vegetable fried rice": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Egg_fried_rice.jpg?utm_campaign=index&utm_content=original&utm_source=commons.wikimedia.org",
   "thukpa": "./assets/noodlesoup.jpg",
-  "samyang noodles": "./assets/noodlesoup.jpg",
+  "samyang noodles": "./assets/snacks.jpg",
   "chauchau": "./assets/noodlesoup.jpg",
   "pho": "./assets/noodlesoup.jpg",
   "lentils": "./assets/lentils.jpg",
@@ -1647,7 +1733,7 @@ function mergeInventoryImportRows(rows, currentItems) {
       category,
       quantity,
       unit,
-      desiredAmount: desiredAmount > 0 ? desiredAmount : base.desiredAmount,
+      desiredAmount,
       thresholdMode,
       thresholdPercent,
       threshold,
@@ -1893,25 +1979,26 @@ function normalizeInventory(data) {
   return data.map((item) => {
     const quantity = Number(item.quantity || 0);
     const threshold = Number(item.threshold || item.lowStockThreshold || 0);
+    const hasExplicitDesiredAmount = item?.desiredAmount != null || item?.desired_amount != null;
     const desiredAmount = Number(item.desiredAmount || item.desired_amount || 0);
     const normalizedDesiredAmount =
-      desiredAmount > 0
-        ? desiredAmount
+      hasExplicitDesiredAmount
+        ? Math.max(desiredAmount, 0)
         : threshold > 0
           ? Math.max(Math.ceil(threshold / 0.25), threshold + 1, quantity, 1)
           : Math.max(Math.ceil(quantity), 1);
     const thresholdMode = normalizeThresholdMode(item.thresholdMode || item.threshold_mode);
     const thresholdPercent =
-      thresholdMode === "percent"
-        ? Number(item.thresholdPercent || item.threshold_percent || 25)
-        : normalizedDesiredAmount > 0
-          ? roundInventoryValue((threshold / normalizedDesiredAmount) * 100)
-          : 25;
+      normalizedDesiredAmount <= 0
+        ? 0
+        : thresholdMode === "percent"
+          ? Number(item.thresholdPercent || item.threshold_percent || 25)
+          : roundInventoryValue((threshold / normalizedDesiredAmount) * 100);
 
     return {
       id: item.id || crypto.randomUUID(),
       itemName: item.itemName || item.name || "",
-      category: item.category || "General",
+      category: normalizeInventoryCategory(item.category, item.itemName || item.name || "", Array.isArray(item.tags) ? item.tags : typeof item.tags === "string" ? item.tags.split(",") : []),
       quantity,
       unit: item.unit || "item",
       threshold,
@@ -1941,7 +2028,7 @@ function normalizeGrocery(data) {
     itemName: item.itemName || item.name || "",
     quantity: Number(item.quantity || 1),
     unit: item.unit || "item",
-    category: item.category || "General",
+    category: normalizeInventoryCategory(item.category, item.itemName || item.name || ""),
     bought: Boolean(item.bought || item.checked),
     source: item.source || "manual",
     linkedInventoryId: item.linkedInventoryId || null,
@@ -1951,9 +2038,11 @@ function normalizeGrocery(data) {
 }
 
 function getStatus(item) {
+  const desiredAmount = Number(item.desiredAmount || 0);
   const quantity = Number(item.quantity);
   const threshold = getEffectiveThreshold(item);
 
+  if (desiredAmount <= 0) return "In Stock";
   if (quantity === 0) return "Finished";
   if (quantity <= threshold) return "Low Stock";
   return "In Stock";
@@ -1977,6 +2066,7 @@ function getDesiredQuantity(item) {
   const threshold = Number(item.threshold || 0);
 
   if (desiredAmount > 0) return desiredAmount;
+  if (desiredAmount === 0) return 0;
   if (threshold <= 0) return Math.max(Math.ceil(quantity), 1);
   return Math.max(Math.ceil(threshold / 0.25), threshold + 1, quantity, 1);
 }
@@ -1986,6 +2076,8 @@ function getEffectiveThreshold(item) {
   const thresholdMode = normalizeThresholdMode(item.thresholdMode);
   const thresholdPercent = Number(item.thresholdPercent || 0);
   const thresholdUnits = Number(item.threshold || 0);
+
+  if (desiredQuantity <= 0) return 0;
 
   if (thresholdMode === "percent") {
     return roundInventoryValue((desiredQuantity * thresholdPercent) / 100);
@@ -2678,6 +2770,7 @@ function App() {
   const [inventorySearchFilter, setInventorySearchFilter] = useState("");
   const [inventorySearchTerms, setInventorySearchTerms] = useState([]);
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState("All");
+  const [inventoryPriorityFilter, setInventoryPriorityFilter] = useState("All");
   const [inventoryExcludeInput, setInventoryExcludeInput] = useState("");
   const [inventoryExcludedTerms, setInventoryExcludedTerms] = useState([]);
   const [grocerySearchFilter, setGrocerySearchFilter] = useState("");
@@ -2687,6 +2780,7 @@ function App() {
   const [groceryExcludedTerms, setGroceryExcludedTerms] = useState([]);
   const [isShoppingSignalOpen, setIsShoppingSignalOpen] = useState(true);
   const [isLowAlertsOpen, setIsLowAlertsOpen] = useState(true);
+  const [isEasyMealNotesOpen, setIsEasyMealNotesOpen] = useState(true);
 
   const previousAlertItemsRef = useRef(new Set());
   const remoteSyncTimeoutRef = useRef(null);
@@ -3156,6 +3250,11 @@ function App() {
     [inventoryWithStatus]
   );
 
+  const inventoryPriorities = useMemo(
+    () => ["All", ...PRIORITY_OPTIONS.filter((priority) => inventoryWithStatus.some((item) => normalizePriority(item.priority) === priority))],
+    [inventoryWithStatus]
+  );
+
   const visibleGroceryItems = useMemo(
     () => grocery.filter((item) => !item.suppressed),
     [grocery]
@@ -3297,14 +3396,15 @@ function App() {
   const filteredInventoryItems = useMemo(
     () => inventoryWithStatus.filter((item) => {
       const categoryMatch = inventoryCategoryFilter === "All" || item.category === inventoryCategoryFilter;
+      const priorityMatch = inventoryPriorityFilter === "All" || normalizePriority(item.priority) === inventoryPriorityFilter;
       const searchText = toSearchText(inventorySearchFilter);
       const searchBlob = getInventorySearchBlob(item);
       const searchMatch = !searchText || searchBlob.includes(searchText);
       const chipMatch = inventorySearchTerms.every((term) => searchBlob.includes(toSearchText(term)));
       const excluded = matchesExcludedTerms(searchBlob, inventoryExcludedTerms);
-      return categoryMatch && searchMatch && chipMatch && !excluded;
+      return categoryMatch && priorityMatch && searchMatch && chipMatch && !excluded;
     }),
-    [inventoryWithStatus, inventoryCategoryFilter, inventorySearchFilter, inventorySearchTerms, inventoryExcludedTerms]
+    [inventoryWithStatus, inventoryCategoryFilter, inventoryPriorityFilter, inventorySearchFilter, inventorySearchTerms, inventoryExcludedTerms]
   );
 
   const filteredGroceryItems = useMemo(
@@ -3372,8 +3472,6 @@ function App() {
   }, [alertItems, grocery]);
 
   useEffect(() => {
-    if (!alertItems.length) return;
-
     setGrocery((current) => {
       const alertMap = new Map(alertItems.map((item) => [item.id, item]));
       let changed = false;
@@ -3414,6 +3512,14 @@ function App() {
         next.filter((item) => item.suppressed).map((item) => item.linkedInventoryId).filter(Boolean)
       );
 
+      const alertIds = new Set(alertItems.map((item) => item.id));
+      const cleanedNext = next.filter((item) => {
+        if (item.source !== "low-stock" || !item.linkedInventoryId || item.bought || item.suppressed) {
+          return true;
+        }
+        return alertIds.has(item.linkedInventoryId);
+      });
+
       const additions = alertItems
         .filter((item) => !activeLinks.has(item.id) && !suppressedLinks.has(item.id))
         .map((item) => ({
@@ -3429,8 +3535,8 @@ function App() {
           priority: item.priority || "Essential"
         }));
 
-      if (!changed && !additions.length) return current;
-      return [...additions, ...next];
+      if (!changed && !additions.length && cleanedNext.length === current.length) return current;
+      return [...additions, ...cleanedNext];
     });
   }, [alertItems]);
 
@@ -3684,6 +3790,7 @@ function App() {
 
     const normalized = {
       ...inventoryForm,
+      category: normalizeInventoryCategory(inventoryForm.category, inventoryForm.itemName, inventoryForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean)),
       quantity: Number(inventoryForm.quantity),
       desiredAmount,
       thresholdMode: normalizedThresholdMode,
@@ -3753,6 +3860,7 @@ function App() {
     const existing = grocery.find((item) => item.id === editingGroceryId);
     const normalized = {
       ...groceryForm,
+      category: normalizeInventoryCategory(groceryForm.category, groceryForm.itemName),
       quantity: Number(groceryForm.quantity),
       bought: groceryForm.bought,
       source: existing?.source || "manual",
@@ -4170,8 +4278,17 @@ function App() {
     () => recipes.map((recipe) => recipe.recipeName).sort((a, b) => a.localeCompare(b)),
     [recipes]
   );
+  const foodLogRecipeSuggestions = useMemo(() => {
+    const searchText = toSearchText(foodLogForm.recipeName);
+    if (!searchText) return [];
+
+    return recipeOptions
+      .filter((recipeName) => toSearchText(recipeName).includes(searchText))
+      .filter((recipeName) => toSearchText(recipeName) !== searchText)
+      .slice(0, 8);
+  }, [foodLogForm.recipeName, recipeOptions]);
   const selectedFoodLogRecipe = useMemo(
-    () => recipes.find((recipe) => recipe.recipeName === foodLogForm.recipeName) || null,
+    () => recipes.find((recipe) => toSearchText(recipe.recipeName) === toSearchText(foodLogForm.recipeName)) || null,
     [recipes, foodLogForm.recipeName]
   );
   const selectedFoodLogEstimate = useMemo(
@@ -4383,86 +4500,97 @@ function App() {
               <Panel
                 title="Easy Meal Notes"
                 action={
-                  <SecondaryButton type="button" onClick={() => setIsHouseholdNotesEditorOpen((current) => !current)}>
-                    {isHouseholdNotesEditorOpen ? "Done" : "Edit Notes"}
-                  </SecondaryButton>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SecondaryButton type="button" onClick={() => setIsEasyMealNotesOpen((current) => !current)}>
+                      {isEasyMealNotesOpen ? "Collapse" : "Expand"}
+                    </SecondaryButton>
+                    <SecondaryButton type="button" onClick={() => setIsHouseholdNotesEditorOpen((current) => !current)}>
+                      {isHouseholdNotesEditorOpen ? "Done" : "Edit Notes"}
+                    </SecondaryButton>
+                  </div>
                 }
               >
+                {isEasyMealNotesOpen ? (
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="overflow-hidden rounded-[1.75rem] border border-kitchen-sage/60 bg-[radial-gradient(circle_at_top_left,_rgba(255,244,232,0.98),_rgba(255,255,255,0.95)_48%,_rgba(224,239,247,0.74))] p-5 shadow-sm">
                     <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <span className="inline-flex rounded-full bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-kitchen-leaf shadow-sm">Heat & Eat</span>
+                      <div className="flex-1 min-w-[220px]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex rounded-full bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-kitchen-leaf shadow-sm">Heat & Eat</span>
+                          <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-kitchen-moss shadow-sm">Ready now</span>
+                        </div>
                         <p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Meals that are already ready to warm up and enjoy.</p>
                       </div>
-                      <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-kitchen-moss shadow-sm">Ready now</span>
                     </div>
-                    {householdHeatAndEatLines.length ? (
-                      <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 shadow-sm">
-                        <div className="space-y-2">
-                          {householdHeatAndEatLines.map((line, index) => (
-                            <div key={`${line}-${index}`} className="flex items-start gap-3 text-sm text-slate-700">
-                              <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-kitchen-leaf/80 shadow-sm" />
-                              <span className="leading-6">{line}</span>
+                        {householdHeatAndEatLines.length ? (
+                          <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 shadow-sm">
+                            <div className="space-y-2">
+                              {householdHeatAndEatLines.map((line, index) => (
+                                <div key={`${line}-${index}`} className="flex items-start gap-3 text-sm text-slate-700">
+                                  <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-kitchen-leaf/80 shadow-sm" />
+                                  <span className="leading-6">{line}</span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 text-sm text-slate-500 shadow-sm">
-                        Add a few ready-to-warm meals here.
-                      </div>
-                    )}
-                    {isHouseholdNotesEditorOpen || !householdHeatAndEatLines.length ? (
-                      <textarea
-                        value={householdNotes.heatAndEat}
-                        onChange={(event) => setHouseholdNotes((current) => ({ ...current, heatAndEat: event.target.value }))}
-                        placeholder="Examples:
+                          </div>
+                        ) : (
+                          <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 text-sm text-slate-500 shadow-sm">
+                            Add a few ready-to-warm meals here.
+                          </div>
+                        )}
+                        {isHouseholdNotesEditorOpen || !householdHeatAndEatLines.length ? (
+                          <textarea
+                            value={householdNotes.heatAndEat}
+                            onChange={(event) => setHouseholdNotes((current) => ({ ...current, heatAndEat: event.target.value }))}
+                            placeholder="Examples:
 Frozen momos
 Paneer curry
 Soup"
-                        className="mt-5 min-h-[170px] w-full rounded-[1.35rem] border border-white/80 bg-white/92 px-4 py-4 text-sm leading-6 text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-kitchen-leaf focus:ring-2 focus:ring-kitchen-leaf/20"
-                      />
-                    ) : null}
+                            className="mt-5 min-h-[170px] w-full rounded-[1.35rem] border border-white/80 bg-white/92 px-4 py-4 text-sm leading-6 text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-kitchen-leaf focus:ring-2 focus:ring-kitchen-leaf/20"
+                          />
+                        ) : null}
                   </div>
 
                   <div className="overflow-hidden rounded-[1.75rem] border border-kitchen-sage/60 bg-[radial-gradient(circle_at_top_left,_rgba(236,248,232,0.98),_rgba(255,255,255,0.95)_48%,_rgba(245,240,228,0.74))] p-5 shadow-sm">
                     <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <span className="inline-flex rounded-full bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-kitchen-leaf shadow-sm">Easy to Make</span>
+                      <div className="flex-1 min-w-[220px]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex rounded-full bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-kitchen-leaf shadow-sm">Easy to Make</span>
+                          <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-kitchen-moss shadow-sm">Simple option</span>
+                        </div>
                         <p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Quick simple options that can be made easily, like avocado bread, yogurt, or toast.</p>
                       </div>
-                      <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-kitchen-moss shadow-sm">Simple option</span>
                     </div>
-                    {householdEasyMakeLines.length ? (
-                      <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 shadow-sm">
-                        <div className="space-y-2">
-                          {householdEasyMakeLines.map((line, index) => (
-                            <div key={`${line}-${index}`} className="flex items-start gap-3 text-sm text-slate-700">
-                              <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-kitchen-leaf/80 shadow-sm" />
-                              <span className="leading-6">{line}</span>
+                        {householdEasyMakeLines.length ? (
+                          <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 shadow-sm">
+                            <div className="space-y-2">
+                              {householdEasyMakeLines.map((line, index) => (
+                                <div key={`${line}-${index}`} className="flex items-start gap-3 text-sm text-slate-700">
+                                  <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-kitchen-leaf/80 shadow-sm" />
+                                  <span className="leading-6">{line}</span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 text-sm text-slate-500 shadow-sm">
-                        Add a few easy make-at-home ideas here.
-                      </div>
-                    )}
-                    {isHouseholdNotesEditorOpen || !householdEasyMakeLines.length ? (
-                      <textarea
-                        value={householdNotes.forHusband}
-                        onChange={(event) => setHouseholdNotes((current) => ({ ...current, forHusband: event.target.value }))}
-                        placeholder="Examples:
+                          </div>
+                        ) : (
+                          <div className="mt-5 rounded-[1.25rem] border border-white/75 bg-white/78 px-4 py-4 text-sm text-slate-500 shadow-sm">
+                            Add a few easy make-at-home ideas here.
+                          </div>
+                        )}
+                        {isHouseholdNotesEditorOpen || !householdEasyMakeLines.length ? (
+                          <textarea
+                            value={householdNotes.forHusband}
+                            onChange={(event) => setHouseholdNotes((current) => ({ ...current, forHusband: event.target.value }))}
+                            placeholder="Examples:
 Avocado bread
 Yogurt with fruit
 Toast and tea"
-                        className="mt-5 min-h-[170px] w-full rounded-[1.35rem] border border-white/80 bg-white/92 px-4 py-4 text-sm leading-6 text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-kitchen-leaf focus:ring-2 focus:ring-kitchen-leaf/20"
-                      />
-                    ) : null}
+                            className="mt-5 min-h-[170px] w-full rounded-[1.35rem] border border-white/80 bg-white/92 px-4 py-4 text-sm leading-6 text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-kitchen-leaf focus:ring-2 focus:ring-kitchen-leaf/20"
+                          />
+                        ) : null}
                   </div>
                 </div>
+                ) : null}
               </Panel>
 
               <section className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
@@ -5224,7 +5352,7 @@ Toast and tea"
             </div>
 
             <Panel title="Find Inventory Items">
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-3">
                 <SearchFilterField
                   label="Search Inventory"
                   value={inventorySearchFilter}
@@ -5236,6 +5364,7 @@ Toast and tea"
                   placeholder="Eggs, Produce, Breakfast..."
                 />
                 <SelectField label="Category" value={inventoryCategoryFilter} onChange={setInventoryCategoryFilter} options={inventoryCategories} />
+                <SelectField label="Priority" value={inventoryPriorityFilter} onChange={setInventoryPriorityFilter} options={inventoryPriorities} />
               </div>
               <div className="mt-4">
                 <ExcludeFilterField
@@ -5340,7 +5469,15 @@ Toast and tea"
               >
                 {isFoodLogFormOpen ? (
                   <form onSubmit={saveFoodLog} className="grid gap-4 md:grid-cols-2">
-                    <SelectField label="Recipe" value={foodLogForm.recipeName} onChange={(value) => setFoodLogForm({ ...foodLogForm, recipeName: value })} options={recipeOptions} placeholder="Select a recipe" required />
+                    <SuggestInputField
+                      label="Recipe"
+                      value={foodLogForm.recipeName}
+                      onChange={(value) => setFoodLogForm({ ...foodLogForm, recipeName: value })}
+                      onSelectSuggestion={(value) => setFoodLogForm({ ...foodLogForm, recipeName: value })}
+                      suggestions={foodLogRecipeSuggestions}
+                      placeholder="Start typing a recipe name"
+                      required
+                    />
                     <InputField label="Servings Eaten" type="number" value={foodLogForm.servingsEaten} onChange={(value) => setFoodLogForm({ ...foodLogForm, servingsEaten: value })} placeholder="1" required />
                     <InputField label="Consumed At" type="datetime-local" value={foodLogForm.consumedAt} onChange={(value) => setFoodLogForm({ ...foodLogForm, consumedAt: value })} required />
                     <TextAreaField label="Notes" value={foodLogForm.notes} onChange={(value) => setFoodLogForm({ ...foodLogForm, notes: value })} />
