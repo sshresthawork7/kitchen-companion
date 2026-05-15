@@ -10,7 +10,9 @@ const STORAGE_KEYS = {
   deletedInventory: "kitchen-companion-deleted-inventory-v1",
   inventory: "kitchen-companion-inventory-v5",
   grocery: "kitchen-companion-grocery-v5",
-  chopboard: "kitchen-companion-chopboard-v1"
+  chopboard: "kitchen-companion-chopboard-v1",
+  foodLog: "kitchen-companion-food-log-v1",
+  dailyNutritionGoals: "kitchen-companion-daily-nutrition-goals-v1"
 };
 
 const INVENTORY_CATEGORIES = [
@@ -65,6 +67,8 @@ const UNIT_OPTIONS = [
   "lb",
   "g",
   "kg",
+  "pack",
+  "clove",
   "bulb",
   "loaf",
   "item"
@@ -450,6 +454,976 @@ const defaultGrocery = [
   }
 ];
 
+const RECIPE_DETAILS_BY_NAME = {
+  "dal bhat": {
+    difficulty: "Medium",
+    prepTime: "50 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Jasmine Rice", quantity: 2, unit: "cup" },
+      { name: "Yellow Lentils", quantity: 1, unit: "cup" },
+      { name: "Garlic", quantity: 4, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" },
+      { name: "Lemon", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Jasmine rice, yellow lentils, garlic, ginger, salt, turmeric, cumin, oil, lemon",
+    steps: "Cook the rice until fluffy and keep warm. Simmer the lentils with turmeric and salt until soft, then finish with a garlic, ginger, cumin, and oil tempering. Serve the dal over rice with lemon on the side.",
+    notes: "A simple dal bhat base recipe. Add tarkari, achar, or greens when you want a fuller plate.",
+    tags: ["Nepali", "Comfort", "Staple Meal"]
+  },
+  "palaak paneer": {
+    difficulty: "Medium",
+    prepTime: "35 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Paneer", quantity: 200, unit: "g" },
+      { name: "Spinach", quantity: 4, unit: "cup" },
+      { name: "Garlic", quantity: 4, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Paneer, spinach, garlic, ginger, onion, tomato, oil, cumin, garam masala, salt",
+    steps: "Blanch or wilt the spinach, then blend it into a smooth puree. Saute onion, garlic, and ginger until fragrant, add tomato and spices, then stir in the spinach puree. Fold in paneer and simmer gently before serving.",
+    notes: "Use cream at the end if you want a richer version, or keep it lighter with just the spinach base.",
+    tags: ["Indian", "Vegetarian", "Comfort"]
+  },
+  "matar paneer": {
+    difficulty: "Easy",
+    prepTime: "30 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Paneer", quantity: 200, unit: "g" },
+      { name: "Peas", quantity: 1, unit: "cup" },
+      { name: "Garlic", quantity: 3, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Paneer, peas, onion, garlic, ginger, tomato, oil, cumin, coriander, salt",
+    steps: "Cook onion, garlic, and ginger until soft, then add tomato and spices to make a quick masala. Stir in peas and a splash of water, then add paneer and simmer until everything is heated through.",
+    notes: "A good weeknight paneer dish. Add chili if you want more heat.",
+    tags: ["Indian", "Vegetarian", "Quick"]
+  },
+  "chowmein": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Chowmein Masala", quantity: 1, unit: "box" },
+      { name: "Vegetables", quantity: 2, unit: "cup" },
+      { name: "Garlic", quantity: 3, unit: "clove" },
+      { name: "Soy Sauce", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Noodles, vegetables, garlic, oil, soy sauce, chowmein masala, salt, pepper",
+    steps: "Boil the noodles until just tender and set them aside. Stir-fry garlic and vegetables in a hot pan, then add noodles, soy sauce, chowmein masala, and seasonings. Toss until everything is evenly coated and hot.",
+    notes: "Use any vegetables you have and keep the noodles slightly firm so they do not turn mushy.",
+    tags: ["Nepali", "Indian-Chinese", "Quick"]
+  },
+  "thukpa": {
+    difficulty: "Medium",
+    prepTime: "35 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Chicken Broth", quantity: 1, unit: "carton" },
+      { name: "Garlic", quantity: 4, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" },
+      { name: "Vegetables", quantity: 2, unit: "cup" }
+    ],
+    ingredients: "Noodles, broth, garlic, ginger, vegetables, soy sauce, salt, pepper, chili",
+    steps: "Simmer broth with garlic, ginger, and vegetables until flavorful. Add noodles and cook until tender, then season with soy sauce, salt, pepper, and chili. Serve hot as a comforting bowl soup.",
+    notes: "A flexible thukpa base. Add chicken or momo on the side if you want it more filling.",
+    tags: ["Nepali", "Soup", "Comfort"]
+  },
+  "momos": {
+    difficulty: "Medium",
+    prepTime: "60 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Chicken", quantity: 500, unit: "g" },
+      { name: "Garlic", quantity: 5, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" },
+      { name: "Momo Masala", quantity: 1, unit: "box" }
+    ],
+    ingredients: "Momo wrappers, minced chicken or vegetables, garlic, ginger, onion, momo masala, salt, oil",
+    steps: "Mix the filling with garlic, ginger, onion, momo masala, and salt. Fill each wrapper, fold tightly, and steam until cooked through. Serve with achar or a spicy dipping sauce.",
+    notes: "This can be adapted for chicken, paneer, or vegetable fillings depending on what you have.",
+    tags: ["Nepali", "Favorite", "Meal Prep"]
+  },
+  "fried rice": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Jasmine Rice", quantity: 3, unit: "cup" },
+      { name: "Eggs", quantity: 2, unit: "piece" },
+      { name: "Peas", quantity: 1, unit: "cup" },
+      { name: "Soy Sauce", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Cooked rice, eggs, peas, carrots, garlic, soy sauce, oil, green onion",
+    steps: "Heat oil in a pan and scramble the eggs first. Add garlic and vegetables, then stir in the rice and soy sauce. Toss until the rice is hot and lightly crisped, then finish with green onion.",
+    notes: "Best made with chilled leftover rice so it stays separated and fries well.",
+    tags: ["Quick", "Leftovers", "Comfort"]
+  },
+  "wrap/sandwich": {
+    difficulty: "Easy",
+    prepTime: "15 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Chicken", quantity: 200, unit: "g" },
+      { name: "Lemon", quantity: 1, unit: "piece" },
+      { name: "Garlic", quantity: 2, unit: "clove" },
+      { name: "Ketchup", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Wrap or bread, cooked chicken or paneer, lettuce, cucumber, ketchup or sauce, salt, pepper",
+    steps: "Warm the wrap or toast the bread. Add the filling, vegetables, and sauce, then roll or stack it tightly. Slice and serve right away.",
+    notes: "Good for using leftovers. Swap chicken for paneer, eggs, or vegetables easily.",
+    tags: ["Quick", "Lunch", "Flexible"]
+  },
+  "choila": {
+    difficulty: "Medium",
+    prepTime: "35 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Chicken", quantity: 500, unit: "g" },
+      { name: "Garlic", quantity: 4, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" },
+      { name: "Lemon", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Chicken or buffalo meat, garlic, ginger, lemon, mustard oil, chili, cumin, salt",
+    steps: "Cook or grill the meat until tender, then slice it into bite-size pieces. Toss with garlic, ginger, lemon, spices, salt, and a little mustard oil. Let it rest briefly so the flavors soak in before serving.",
+    notes: "A smoky and spicy Nepali-style choila. Best served with chiura or as part of a snack plate.",
+    tags: ["Nepali", "Spicy", "Snack Plate"]
+  },
+  "chatpate": {
+    difficulty: "Easy",
+    prepTime: "15 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Chuira", quantity: 2, unit: "cup" },
+      { name: "Lemon", quantity: 1, unit: "piece" },
+      { name: "Chatpata Masala", quantity: 1, unit: "box" }
+    ],
+    ingredients: "Puffed rice or beaten rice, onion, tomato, cucumber, lemon, chili, chatpata masala, salt",
+    steps: "Mix the dry base with chopped vegetables and seasonings in a large bowl. Squeeze lemon over the top and toss well so everything is evenly coated. Serve immediately while it is still crisp.",
+    notes: "A quick Nepali street-style snack. Adjust chili and tanginess to taste.",
+    tags: ["Nepali", "Snack", "Street Food"]
+  },
+  "pakoda": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Vegetables", quantity: 2, unit: "cup" },
+      { name: "Garlic", quantity: 2, unit: "clove" },
+      { name: "Lemon", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Gram flour, sliced vegetables, garlic, chili, turmeric, cumin, salt, water, oil",
+    steps: "Make a thick batter with gram flour, spices, and a little water. Fold in the vegetables, then fry spoonfuls in hot oil until golden and crisp. Drain and serve hot.",
+    notes: "Works well with onion, potato, spinach, or mixed vegetables. Serve with tea or chutney.",
+    tags: ["Snack", "Comfort", "Tea Time"]
+  },
+  "bara": {
+    difficulty: "Medium",
+    prepTime: "45 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Black Lentils", quantity: 1, unit: "cup" },
+      { name: "Garlic", quantity: 3, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Black lentils, garlic, ginger, cumin, salt, oil",
+    steps: "Soak the lentils, then grind them into a thick batter with garlic, ginger, and spices. Shape small patties and fry them until crisp outside and tender inside. Serve warm.",
+    notes: "A classic Newari-style lentil fritter. Good on its own or as part of a larger meal.",
+    tags: ["Nepali", "Newari", "Snack"]
+  },
+  "sel": {
+    difficulty: "Medium",
+    prepTime: "60 minutes",
+    servings: 6,
+    structuredIngredients: [
+      { name: "Jasmine Rice", quantity: 2, unit: "cup" },
+      { name: "Sugar", quantity: 0.5, unit: "cup" }
+    ],
+    ingredients: "Rice flour or soaked rice batter, sugar, milk, cardamom, oil or ghee",
+    steps: "Prepare a smooth batter and let it rest briefly. Pour it into hot oil in ring shapes and fry until lightly golden on both sides. Drain and cool slightly before serving.",
+    notes: "Sel roti is festive and special. Cardamom gives it its familiar sweet aroma.",
+    tags: ["Nepali", "Festive", "Traditional"]
+  },
+  "samosa": {
+    difficulty: "Medium",
+    prepTime: "45 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Potatoes", quantity: 3, unit: "piece" },
+      { name: "Peas", quantity: 1, unit: "cup" },
+      { name: "Garlic", quantity: 2, unit: "clove" }
+    ],
+    ingredients: "Samosa wrappers or dough, potatoes, peas, garlic, ginger, cumin, chili, salt, oil",
+    steps: "Cook the potato filling with peas and spices until flavorful. Fill each wrapper, seal tightly, and fry until crisp and golden. Serve hot with chutney or ketchup.",
+    notes: "A great make-ahead snack. Make smaller ones for appetizers or tea time.",
+    tags: ["Snack", "Comfort", "Party Food"]
+  },
+  "ghundruk": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Ghundruk", quantity: 2, unit: "cup" },
+      { name: "Garlic", quantity: 3, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Ghundruk, garlic, ginger, onion, tomato, chili, salt, oil",
+    steps: "Rinse the ghundruk lightly, then simmer it with onion, garlic, ginger, tomato, and spices until soft and flavorful. Adjust salt and serve warm as a side or light dish.",
+    notes: "A fermented leafy green staple with a tangy flavor. Often served alongside rice and dal.",
+    tags: ["Nepali", "Fermented", "Traditional"]
+  },
+  "soyabean": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Soyabean", quantity: 2, unit: "cup" },
+      { name: "Garlic", quantity: 3, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Soy chunks, onion, garlic, ginger, tomato, salt, turmeric, cumin, oil",
+    steps: "Soak or boil the soy chunks until softened, then squeeze out the excess liquid. Cook onion, garlic, ginger, tomato, and spices in oil, then add the soy chunks and simmer until the flavors come together.",
+    notes: "A simple soy chunk curry-style base. Good with rice, roti, or as a protein add-in.",
+    tags: ["Protein", "Budget Friendly", "Pantry Meal"]
+  },
+  "spaghetti": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Spaghetti", quantity: 400, unit: "g" },
+      { name: "Garlic", quantity: 3, unit: "clove" },
+      { name: "Marinara Sauce", quantity: 1, unit: "jar" }
+    ],
+    ingredients: "Spaghetti, garlic, oil, marinara sauce, salt, pepper, parmesan if available",
+    steps: "Boil the spaghetti until just tender and reserve a little pasta water. Warm the sauce with garlic in a separate pan, then toss in the pasta and loosen with pasta water as needed. Finish with pepper and serve hot.",
+    notes: "A basic spaghetti dinner that works well as a weeknight fallback. Add vegetables or chicken if you want it heartier.",
+    tags: ["Quick", "Pasta", "Comfort"]
+  },
+  "marinara pasta": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Pasta", quantity: 400, unit: "g" },
+      { name: "Marinara Sauce", quantity: 1, unit: "jar" },
+      { name: "Garlic", quantity: 2, unit: "clove" }
+    ],
+    ingredients: "Pasta, marinara sauce, garlic, olive oil, salt, pepper",
+    steps: "Cook the pasta until tender. Warm the marinara with garlic in a pan, then combine with the pasta and toss until evenly coated. Serve hot with a little pepper on top.",
+    notes: "Very flexible and easy. Add vegetables or extra protein when you want to build it out.",
+    tags: ["Pasta", "Quick", "Weeknight"]
+  },
+  "alfredo pasta": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Pasta", quantity: 400, unit: "g" },
+      { name: "Alfredo Sauce", quantity: 1, unit: "jar" },
+      { name: "Garlic", quantity: 2, unit: "clove" }
+    ],
+    ingredients: "Pasta, alfredo sauce, garlic, butter or oil, black pepper",
+    steps: "Cook the pasta until tender and set aside. Warm the alfredo sauce with garlic in a pan, then stir in the pasta and coat everything evenly. Serve hot with black pepper.",
+    notes: "Rich and simple. Add chicken or vegetables if you want to turn it into a fuller meal.",
+    tags: ["Pasta", "Comfort", "Creamy"]
+  },
+  "mac n cheese": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Pasta", quantity: 300, unit: "g" },
+      { name: "Paneer", quantity: 100, unit: "g" }
+    ],
+    ingredients: "Macaroni pasta, milk, cheese or cheese sauce, butter, salt, pepper",
+    steps: "Cook the pasta until soft and drain it well. Stir it into a warm cheese sauce and cook briefly until creamy and coated. Serve immediately while hot.",
+    notes: "Use any simple cheese sauce base you like. Good as a comfort meal or quick side.",
+    tags: ["Comfort", "Pasta", "Quick"]
+  },
+  "tea": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Tata Tea", quantity: 2, unit: "tbsp" },
+      { name: "Sugar", quantity: 2, unit: "tbsp" }
+    ],
+    ingredients: "Tea leaves, water, milk, sugar, cardamom or ginger if desired",
+    steps: "Bring water to a simmer with tea leaves and any spices you want to use. Add milk and sugar, simmer briefly, then strain into cups and serve hot.",
+    notes: "Use green tea or black tea depending on the style you want. Adjust sugar and milk to taste.",
+    tags: ["Drink", "Comfort", "Daily Routine"]
+  },
+  "roti": {
+    difficulty: "Easy",
+    prepTime: "30 minutes",
+    servings: 6,
+    structuredIngredients: [
+      { name: "Flour", quantity: 2, unit: "cup" },
+      { name: "Salt", quantity: 1, unit: "tsp" }
+    ],
+    ingredients: "Whole wheat flour, water, salt, optional oil or ghee",
+    steps: "Mix flour, salt, and water into a soft dough and let it rest briefly. Divide into balls, roll each one thin, and cook on a hot pan until both sides are lightly browned. Serve warm.",
+    notes: "Brush with ghee if you want a softer finish. Keep covered so the roti stays tender.",
+    tags: ["Staple", "Flatbread", "Everyday"]
+  },
+  "avacado": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Avocado", quantity: 1, unit: "piece" },
+      { name: "Lemon", quantity: 0.5, unit: "piece" }
+    ],
+    ingredients: "Avocado, lemon, salt, pepper, bread or toast if serving that way",
+    steps: "Slice or mash the avocado and season it with lemon, salt, and pepper. Serve it on toast, with eggs, or as a quick side for breakfast.",
+    notes: "You can add chili flakes or a drizzle of olive oil for extra flavor.",
+    tags: ["Breakfast", "Quick", "Fresh"]
+  },
+  "chia pudding": {
+    difficulty: "Very Easy",
+    prepTime: "Overnight",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Chia Seeds", quantity: 4, unit: "tbsp" },
+      { name: "Milk", quantity: 1, unit: "cup" }
+    ],
+    ingredients: "Chia seeds, milk, maple syrup or honey, fruit, optional nuts",
+    steps: "Whisk the chia seeds with milk and sweetener, then refrigerate until thickened. Stir once or twice while setting if needed. Top with fruit or nuts before serving.",
+    notes: "A make-ahead breakfast or snack that works well with berries, banana, or granola.",
+    tags: ["Breakfast", "Meal Prep", "Healthy"]
+  },
+  "pb jelly sandwich": {
+    difficulty: "Very Easy",
+    prepTime: "5 minutes",
+    servings: 1,
+    structuredIngredients: [
+      { name: "Bread", quantity: 2, unit: "piece" },
+      { name: "Peanut Butter", quantity: 2, unit: "tbsp" }
+    ],
+    ingredients: "Bread, peanut butter, jelly or jam",
+    steps: "Spread peanut butter on one slice of bread and jelly on the other. Press together, slice if you want, and serve immediately.",
+    notes: "A quick breakfast or snack. Add banana slices if you want a little more substance.",
+    tags: ["Snack", "Quick", "Lunchbox"]
+  },
+  "haluwa": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Sugar", quantity: 0.75, unit: "cup" },
+      { name: "Cardamom", quantity: 1, unit: "tsp" }
+    ],
+    ingredients: "Semolina or flour, ghee, sugar, water or milk, cardamom, optional nuts",
+    steps: "Toast the semolina or flour in ghee until fragrant. Add the liquid carefully, stir until smooth, then sweeten and cook until thick. Finish with cardamom and serve warm.",
+    notes: "A comforting sweet dish that can be made simple or festive depending on toppings.",
+    tags: ["Dessert", "Comfort", "Traditional"]
+  },
+  "malpuwa": {
+    difficulty: "Medium",
+    prepTime: "35 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Flour", quantity: 1.5, unit: "cup" },
+      { name: "Sugar", quantity: 0.5, unit: "cup" }
+    ],
+    ingredients: "Flour, milk, sugar, cardamom, oil or ghee for frying",
+    steps: "Make a pourable batter with flour, milk, sugar, and cardamom. Fry small rounds until golden on both sides and serve warm.",
+    notes: "A sweet fried treat that works well for festivals, brunch, or a special breakfast.",
+    tags: ["Dessert", "Festive", "Traditional"]
+  },
+  "chicken": {
+    difficulty: "Easy",
+    prepTime: "30 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Chicken Breast", quantity: 500, unit: "g" },
+      { name: "Garlic", quantity: 3, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Chicken, garlic, ginger, salt, pepper, oil, optional spices",
+    steps: "Season the chicken with salt, pepper, garlic, and ginger. Cook it in a pan or oven until fully done and lightly browned. Slice and serve as a simple protein base for meals.",
+    notes: "A flexible plain chicken recipe you can pair with rice, vegetables, wraps, or salads.",
+    tags: ["Protein", "Meal Prep", "Flexible"]
+  },
+  "vegetables": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Vegetables", quantity: 3, unit: "cup" },
+      { name: "Garlic", quantity: 2, unit: "clove" }
+    ],
+    ingredients: "Mixed vegetables, garlic, oil, salt, pepper, optional soy sauce or herbs",
+    steps: "Heat oil in a pan and cook the garlic briefly. Add the vegetables and stir-fry or saute until tender but still bright, then season and serve hot.",
+    notes: "Works as a side dish or base for rice, noodles, or wraps.",
+    tags: ["Healthy", "Quick", "Side Dish"]
+  },
+  "pizza": {
+    difficulty: "Easy",
+    prepTime: "30 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Marinara Sauce", quantity: 0.5, unit: "jar" },
+      { name: "Paneer", quantity: 150, unit: "g" }
+    ],
+    ingredients: "Pizza dough or base, marinara sauce, cheese, vegetables or toppings of choice",
+    steps: "Spread sauce over the dough or pizza base, add cheese and toppings, then bake until the crust is crisp and the top is bubbly. Slice and serve hot.",
+    notes: "Use leftover vegetables or paneer to make it more filling.",
+    tags: ["Comfort", "Party Food", "Flexible"]
+  },
+  "burger": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Chicken", quantity: 250, unit: "g" },
+      { name: "Ketchup", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Burger buns, patty, lettuce, onion, tomato, ketchup or sauce, salt, pepper",
+    steps: "Cook the patty until done and warm the buns lightly. Assemble with vegetables and sauce, then serve right away.",
+    notes: "Use chicken, veggie, or paneer patties depending on what you have.",
+    tags: ["Comfort", "Quick", "Lunch"]
+  },
+  "salad": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Cucumber", quantity: 1, unit: "piece" },
+      { name: "Lemon", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Cucumber, carrots, lettuce or greens, lemon, salt, pepper, optional olive oil",
+    steps: "Chop the vegetables, toss them together, and season with lemon, salt, and pepper. Add oil or herbs if you want a fuller dressing.",
+    notes: "A simple everyday salad that works well beside heavier meals.",
+    tags: ["Healthy", "Fresh", "Side Dish"]
+  },
+  "banana": {
+    difficulty: "Very Easy",
+    prepTime: "2 minutes",
+    servings: 1,
+    structuredIngredients: [
+      { name: "Banana", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Banana",
+    steps: "Peel the banana and eat it as-is or slice it over oatmeal, toast, or yogurt.",
+    notes: "A simple, quick breakfast or snack item that also works well in smoothies.",
+    tags: ["Snack", "Quick", "Fresh"]
+  },
+  "coffee": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Coffee", quantity: 2, unit: "tbsp" },
+      { name: "Sugar", quantity: 2, unit: "tsp" }
+    ],
+    ingredients: "Coffee grounds or instant coffee, hot water, milk, sugar",
+    steps: "Brew the coffee or mix it with hot water, then add milk and sugar to taste. Serve warm.",
+    notes: "Keep it simple for everyday drinking, or make it stronger if you want a more concentrated cup.",
+    tags: ["Drink", "Daily Routine", "Quick"]
+  },
+  "pan cake": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Eggs", quantity: 2, unit: "piece" },
+      { name: "Milk", quantity: 1, unit: "cup" },
+      { name: "Sugar", quantity: 2, unit: "tbsp" }
+    ],
+    ingredients: "Flour, eggs, milk, sugar, baking powder, butter or oil",
+    steps: "Whisk the batter until smooth. Pour onto a hot pan in small rounds and cook until bubbles form, then flip and finish the other side. Serve warm with syrup or fruit.",
+    notes: "A simple homemade pancake base that works for breakfast or brunch.",
+    tags: ["Breakfast", "Comfort", "Weekend"]
+  },
+  "waffles": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Eggs", quantity: 2, unit: "piece" },
+      { name: "Milk", quantity: 1, unit: "cup" },
+      { name: "Sugar", quantity: 2, unit: "tbsp" }
+    ],
+    ingredients: "Flour, eggs, milk, sugar, baking powder, butter or oil",
+    steps: "Prepare a smooth batter and pour it into a preheated waffle maker. Cook until crisp and golden, then serve warm with syrup or fruit.",
+    notes: "Good for special breakfasts and easy to top with fruit, yogurt, or nut butter.",
+    tags: ["Breakfast", "Weekend", "Comfort"]
+  },
+  "green smoothie": {
+    difficulty: "Very Easy",
+    prepTime: "5 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Spinach", quantity: 2, unit: "cup" },
+      { name: "Banana", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Spinach, banana, milk or water, optional peanut butter or chia seeds",
+    steps: "Add everything to a blender and blend until smooth. Adjust the thickness with more liquid if needed and serve immediately.",
+    notes: "A good way to add greens to breakfast or a quick snack.",
+    tags: ["Breakfast", "Healthy", "Quick"]
+  },
+  "muffin": {
+    difficulty: "Easy",
+    prepTime: "30 minutes",
+    servings: 6,
+    structuredIngredients: [
+      { name: "Eggs", quantity: 2, unit: "piece" },
+      { name: "Sugar", quantity: 0.5, unit: "cup" }
+    ],
+    ingredients: "Flour, eggs, sugar, milk, oil or butter, baking powder, optional fruit or chocolate chips",
+    steps: "Mix the batter just until combined, spoon it into muffin cups, and bake until the tops are set and lightly golden. Cool slightly before serving.",
+    notes: "A flexible muffin base you can adapt with fruit, nuts, or chocolate.",
+    tags: ["Snack", "Baked", "Make Ahead"]
+  },
+  "donuts": {
+    difficulty: "Medium",
+    prepTime: "40 minutes",
+    servings: 6,
+    structuredIngredients: [
+      { name: "Flour", quantity: 2, unit: "cup" },
+      { name: "Sugar", quantity: 0.5, unit: "cup" }
+    ],
+    ingredients: "Flour, sugar, milk, butter or oil, yeast or baking powder, optional glaze",
+    steps: "Make the dough or batter, shape the donuts, and fry or bake until golden. Glaze or dust them once slightly cooled.",
+    notes: "Best for a treat day rather than everyday breakfast.",
+    tags: ["Snack", "Treat", "Sweet"]
+  },
+  "gwar mari": {
+    difficulty: "Easy",
+    prepTime: "10 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Bread", quantity: 4, unit: "piece" },
+      { name: "Eggs", quantity: 2, unit: "piece" }
+    ],
+    ingredients: "Bread, eggs, salt, sugar or spices depending on style, oil or butter",
+    steps: "Dip the bread in the egg mixture and fry it on both sides until golden. Serve warm as a quick breakfast.",
+    notes: "This works as a sweet or savory breakfast depending on how you season the egg mixture.",
+    tags: ["Breakfast", "Quick", "Comfort"]
+  },
+  "bagels": {
+    difficulty: "Very Easy",
+    prepTime: "8 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Bagels", quantity: 2, unit: "piece" },
+      { name: "Cream Cheese", quantity: 2, unit: "tbsp" }
+    ],
+    ingredients: "Bagels, cream cheese, butter, jam, or sandwich fillings",
+    steps: "Slice and toast the bagel if you like. Spread with cream cheese, butter, jam, or turn it into a breakfast sandwich.",
+    notes: "Simple and flexible depending on whether you want sweet or savory toppings.",
+    tags: ["Breakfast", "Quick", "Flexible"]
+  },
+  "chuira": {
+    difficulty: "Very Easy",
+    prepTime: "5 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Chuira", quantity: 2, unit: "cup" }
+    ],
+    ingredients: "Beaten rice, optional yogurt, milk, banana, sugar, or savory sides",
+    steps: "Serve the beaten rice as-is or pair it with yogurt, fruit, tea, or savory items like choila or achar.",
+    notes: "A flexible Nepali staple that can be eaten as a light meal, snack, or side.",
+    tags: ["Nepali", "Staple", "Flexible"]
+  },
+  "burrito bowl": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Jasmine Rice", quantity: 2, unit: "cup" },
+      { name: "Black-Eyed Peas", quantity: 1, unit: "cup" },
+      { name: "Chicken", quantity: 250, unit: "g" }
+    ],
+    ingredients: "Rice, beans, chicken or paneer, vegetables, salsa, sauce, lemon or lime",
+    steps: "Build the bowl with rice as the base, then add protein, beans, vegetables, and sauce. Finish with lemon or lime and serve warm or room temperature.",
+    notes: "A good meal-prep style bowl that can be customized with whatever you have.",
+    tags: ["Meal Prep", "Flexible", "Balanced"]
+  },
+  "tacos": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Chicken", quantity: 250, unit: "g" },
+      { name: "Lemon", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Taco shells or tortillas, chicken or beans, lettuce, onion, tomato, sauce, lemon or lime",
+    steps: "Warm the shells or tortillas, fill them with the cooked protein and toppings, then finish with sauce and lemon or lime. Serve right away.",
+    notes: "A simple taco night base that can be adapted with chicken, paneer, or bean fillings.",
+    tags: ["Quick", "Party Food", "Flexible"]
+  },
+  "eggs": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 1,
+    structuredIngredients: [
+      { name: "Eggs", quantity: 2, unit: "piece" }
+    ],
+    ingredients: "Eggs, salt, pepper, oil or butter",
+    steps: "Cook the eggs any way you like, such as fried, scrambled, or boiled. Season simply and serve hot.",
+    notes: "A flexible egg entry for quick breakfasts or protein add-ons.",
+    tags: ["Breakfast", "Protein", "Quick"]
+  },
+  "potatoes": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Potatoes", quantity: 4, unit: "piece" },
+      { name: "Garlic", quantity: 2, unit: "clove" }
+    ],
+    ingredients: "Potatoes, oil, salt, garlic, pepper, optional herbs or spices",
+    steps: "Boil, roast, or pan-fry the potatoes until tender and lightly crisped. Season them while hot and serve as a side or simple main base.",
+    notes: "Use this as a general potato recipe base when you want something versatile.",
+    tags: ["Staple", "Side Dish", "Comfort"]
+  },
+  "pani puri": {
+    difficulty: "Medium",
+    prepTime: "35 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Potatoes", quantity: 3, unit: "piece" },
+      { name: "Lemon", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Puri shells, potatoes, chickpeas, pani, chutney, spices",
+    steps: "Prepare the potato and chickpea filling, then make or mix the flavored pani. Fill each puri just before eating and serve immediately so they stay crisp.",
+    notes: "Best assembled fresh. The balance of tangy water and spicy filling is what makes it fun.",
+    tags: ["Snack", "Street Food", "Party Food"]
+  },
+  "samyang noodles": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 1,
+    structuredIngredients: [
+      { name: "Samyang Noodles", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Samyang noodles packet, water, included seasoning, optional egg or vegetables",
+    steps: "Boil the noodles until tender, drain most of the water, then stir in the seasoning until fully coated. Add an egg or vegetables if you want to make it more substantial.",
+    notes: "A quick spicy noodle option. Adjust the sauce amount if you want it less intense.",
+    tags: ["Quick", "Instant Noodles", "Spicy"]
+  },
+  "chauchau": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 1,
+    structuredIngredients: [
+      { name: "Chauchau", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Instant noodles packet, water, seasoning, optional vegetables or egg",
+    steps: "Cook the noodles in water until soft, then mix in the seasoning. Add any quick extras you want and serve hot.",
+    notes: "A basic instant noodle meal that can be upgraded with vegetables, egg, or leftover protein.",
+    tags: ["Quick", "Instant Noodles", "Comfort"]
+  },
+  "pho": {
+    difficulty: "Medium",
+    prepTime: "40 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Chicken Broth", quantity: 1, unit: "carton" },
+      { name: "Garlic", quantity: 3, unit: "clove" },
+      { name: "Ginger", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Broth, rice noodles, garlic, ginger, herbs, protein of choice, lime or lemon",
+    steps: "Build the broth with garlic and ginger until aromatic. Cook the noodles separately, then combine them in bowls with the hot broth and desired toppings. Serve immediately.",
+    notes: "A flexible noodle soup base inspired by pho-style flavors. Add herbs and protein based on what you have.",
+    tags: ["Soup", "Comfort", "Noodle Bowl"]
+  },
+  "corn": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Corn", quantity: 2, unit: "piece" },
+      { name: "Lemon", quantity: 0.5, unit: "piece" }
+    ],
+    ingredients: "Corn, salt, butter, chili, lemon",
+    steps: "Boil, steam, or roast the corn until tender. Season with salt, butter, chili, and lemon before serving.",
+    notes: "Works as a simple snack or side dish and can be adjusted sweet, salty, or spicy.",
+    tags: ["Snack", "Side Dish", "Simple"]
+  },
+  "airfried chickpeas": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "White Chana", quantity: 2, unit: "cup" },
+      { name: "Chat Masala", quantity: 1, unit: "tsp" }
+    ],
+    ingredients: "Cooked chickpeas, oil, salt, chat masala or spice mix",
+    steps: "Dry the chickpeas well, toss with oil and spices, then air-fry until crisp. Let them cool slightly before eating so they stay crunchy.",
+    notes: "A great high-protein snack that stores well for short periods after cooking.",
+    tags: ["Snack", "Protein", "Healthy"]
+  },
+  "hummus and naan": {
+    difficulty: "Easy",
+    prepTime: "15 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "White Chana", quantity: 2, unit: "cup" },
+      { name: "Garlic", quantity: 2, unit: "clove" },
+      { name: "Lemon", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Chickpeas, garlic, lemon, tahini or oil, salt, naan",
+    steps: "Blend the hummus ingredients until smooth, adjusting lemon and salt to taste. Warm the naan and serve alongside the hummus.",
+    notes: "Good as a snack plate, light lunch, or party dip setup.",
+    tags: ["Snack", "Dip", "Protein"]
+  },
+  "sushi": {
+    difficulty: "Medium",
+    prepTime: "45 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "Jasmine Rice", quantity: 2, unit: "cup" },
+      { name: "Cucumber", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Cooked sushi-style rice, seaweed sheets, cucumber, avocado, fish or tofu, soy sauce",
+    steps: "Prepare the rice and fillings first, then roll or assemble the sushi with seaweed and your chosen ingredients. Slice and serve with soy sauce.",
+    notes: "A flexible homemade sushi base. Keep it simple with vegetables if you want a lighter version.",
+    tags: ["Meal Prep", "Fresh", "Fun"]
+  },
+  "falafal": {
+    difficulty: "Medium",
+    prepTime: "35 minutes",
+    servings: 4,
+    structuredIngredients: [
+      { name: "White Chana", quantity: 2, unit: "cup" },
+      { name: "Garlic", quantity: 3, unit: "clove" }
+    ],
+    ingredients: "Chickpeas, garlic, onion, herbs, cumin, coriander, salt, oil",
+    steps: "Blend the mixture until coarse but moldable, shape into small balls or patties, then fry or bake until crisp outside and cooked through. Serve with salad, wraps, or dip.",
+    notes: "A nice protein-rich option that can be eaten as a snack, side, or main filling.",
+    tags: ["Protein", "Snack", "Vegetarian"]
+  },
+  "fish": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Fish", quantity: 400, unit: "g" },
+      { name: "Garlic", quantity: 2, unit: "clove" },
+      { name: "Lemon", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Fish, garlic, lemon, salt, pepper, oil",
+    steps: "Season the fish with garlic, lemon, salt, and pepper. Pan-cook or bake it until flaky and fully cooked, then serve immediately.",
+    notes: "A flexible fish entry for simple weeknight meals.",
+    tags: ["Protein", "Quick", "Light"]
+  },
+  "salmon": {
+    difficulty: "Easy",
+    prepTime: "25 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Salmon", quantity: 400, unit: "g" },
+      { name: "Lemon", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Salmon, lemon, salt, pepper, oil, optional garlic",
+    steps: "Season the salmon and cook it in a pan, oven, or air fryer until just done and flaky. Finish with lemon before serving.",
+    notes: "A simple salmon base that works well with rice, salad, or vegetables.",
+    tags: ["Protein", "Healthy", "Quick"]
+  },
+  "tofu": {
+    difficulty: "Easy",
+    prepTime: "20 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Tofu", quantity: 400, unit: "g" },
+      { name: "Soy Sauce", quantity: 1, unit: "tbsp" }
+    ],
+    ingredients: "Tofu, soy sauce, garlic, oil, salt, pepper, optional vegetables",
+    steps: "Press and cube the tofu, then pan-fry or bake it until lightly crisped. Toss with soy sauce and seasonings before serving.",
+    notes: "A good vegetarian protein base for rice bowls, stir-fries, or wraps.",
+    tags: ["Protein", "Vegetarian", "Quick"]
+  },
+  "peanut butter banana smoothie": {
+    difficulty: "Very Easy",
+    prepTime: "5 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Banana", quantity: 1, unit: "piece" },
+      { name: "Peanut Butter", quantity: 2, unit: "tbsp" },
+      { name: "Milk", quantity: 1, unit: "cup" }
+    ],
+    ingredients: "Banana, peanut butter, milk, optional oats or ice",
+    steps: "Blend everything until smooth and creamy. Add more milk if you want it thinner and serve immediately.",
+    notes: "A quick snack or breakfast smoothie with more staying power than fruit alone.",
+    tags: ["Drink", "Snack", "Quick"]
+  },
+  "ice cream": {
+    difficulty: "Very Easy",
+    prepTime: "5 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Ice Cream", quantity: 2, unit: "cup" }
+    ],
+    ingredients: "Ice cream",
+    steps: "Scoop into bowls or cones and serve immediately.",
+    notes: "A simple dessert entry for logging sweet treats.",
+    tags: ["Dessert", "Treat", "Sweet"]
+  },
+  "lassi": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Yogurt", quantity: 1, unit: "cup" },
+      { name: "Sugar", quantity: 2, unit: "tbsp" }
+    ],
+    ingredients: "Yogurt, water or milk, sugar, optional cardamom or fruit",
+    steps: "Blend the yogurt with water or milk and sweetener until smooth and frothy. Serve chilled.",
+    notes: "Keep it plain, sweet, or add fruit depending on what kind of lassi you want.",
+    tags: ["Drink", "Refreshing", "Traditional"]
+  },
+  "banana milk": {
+    difficulty: "Very Easy",
+    prepTime: "5 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Banana", quantity: 1, unit: "piece" },
+      { name: "Milk", quantity: 1, unit: "cup" }
+    ],
+    ingredients: "Banana, milk, optional sugar or honey",
+    steps: "Blend the banana with milk until smooth and serve chilled or at room temperature.",
+    notes: "A very simple drink that works well as a light breakfast or snack.",
+    tags: ["Drink", "Quick", "Breakfast"]
+  },
+  "fruits": {
+    difficulty: "Very Easy",
+    prepTime: "5 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Banana", quantity: 1, unit: "piece" },
+      { name: "Apple", quantity: 1, unit: "piece" }
+    ],
+    ingredients: "Any fresh fruit you have, such as banana, apple, berries, melon, or citrus",
+    steps: "Wash, peel, or slice the fruit as needed and serve fresh.",
+    notes: "A general fresh fruit entry for easy breakfast, snack, or side logging.",
+    tags: ["Snack", "Fresh", "Healthy"]
+  },
+  "boba": {
+    difficulty: "Medium",
+    prepTime: "25 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Tea", quantity: 1, unit: "cup" },
+      { name: "Sugar", quantity: 2, unit: "tbsp" }
+    ],
+    ingredients: "Tea, milk, tapioca pearls, sugar, ice",
+    steps: "Cook the tapioca pearls, prepare the tea base, then combine with milk, sweetener, and ice. Add the pearls at the end and serve with a wide straw.",
+    notes: "A fun treat drink rather than an everyday option.",
+    tags: ["Drink", "Treat", "Sweet"]
+  },
+  "chips": {
+    difficulty: "Very Easy",
+    prepTime: "2 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Chips", quantity: 1, unit: "bag" }
+    ],
+    ingredients: "Potato chips or your preferred packaged chips",
+    steps: "Open and serve.",
+    notes: "A simple snack entry for convenience and food logging.",
+    tags: ["Snack", "Treat", "Quick"]
+  },
+  "edamame": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Edamame", quantity: 2, unit: "cup" }
+    ],
+    ingredients: "Edamame, salt",
+    steps: "Boil, steam, or microwave the edamame until heated through, then season lightly and serve.",
+    notes: "A quick high-protein snack or side.",
+    tags: ["Snack", "Protein", "Healthy"]
+  },
+  "pop corn": {
+    difficulty: "Very Easy",
+    prepTime: "10 minutes",
+    servings: 3,
+    structuredIngredients: [
+      { name: "Pop Corn", quantity: 0.5, unit: "cup" }
+    ],
+    ingredients: "Popcorn kernels, oil or butter, salt",
+    steps: "Pop the kernels on the stovetop, in a popcorn maker, or in the microwave, then season and serve.",
+    notes: "A simple snack base that can be kept savory or sweet.",
+    tags: ["Snack", "Movie Night", "Quick"]
+  },
+  "cake": {
+    difficulty: "Medium",
+    prepTime: "50 minutes",
+    servings: 8,
+    structuredIngredients: [
+      { name: "Flour", quantity: 2, unit: "cup" },
+      { name: "Sugar", quantity: 1, unit: "cup" },
+      { name: "Eggs", quantity: 2, unit: "piece" }
+    ],
+    ingredients: "Flour, sugar, eggs, milk, butter or oil, baking powder, flavoring of choice",
+    steps: "Mix the batter until smooth, pour into a prepared pan, and bake until set and golden. Cool before slicing.",
+    notes: "A general cake entry for dessert or celebration logging.",
+    tags: ["Dessert", "Baked", "Treat"]
+  },
+  "nuts": {
+    difficulty: "Very Easy",
+    prepTime: "2 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Almonds", quantity: 0.5, unit: "cup" },
+      { name: "Walnuts", quantity: 0.25, unit: "cup" },
+      { name: "Cashews", quantity: 0.25, unit: "cup" }
+    ],
+    ingredients: "Mixed nuts such as almonds, walnuts, and cashews",
+    steps: "Portion and serve as a snack or topping.",
+    notes: "A flexible snack entry that works as-is or over oatmeal and yogurt.",
+    tags: ["Snack", "Protein", "Healthy"]
+  },
+  "cucumber": {
+    difficulty: "Very Easy",
+    prepTime: "5 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Cucumber", quantity: 1, unit: "piece" },
+      { name: "Lemon", quantity: 0.5, unit: "piece" }
+    ],
+    ingredients: "Cucumber, salt, lemon, optional chili",
+    steps: "Slice the cucumber and season it lightly before serving.",
+    notes: "A simple fresh snack or side.",
+    tags: ["Snack", "Fresh", "Healthy"]
+  },
+  "carrots": {
+    difficulty: "Very Easy",
+    prepTime: "5 minutes",
+    servings: 2,
+    structuredIngredients: [
+      { name: "Carrots", quantity: 2, unit: "piece" }
+    ],
+    ingredients: "Fresh carrots",
+    steps: "Wash, peel if needed, slice, and serve.",
+    notes: "A simple vegetable snack entry for quick logging.",
+    tags: ["Snack", "Fresh", "Healthy"]
+  },
+  "soda": {
+    difficulty: "Very Easy",
+    prepTime: "2 minutes",
+    servings: 1,
+    structuredIngredients: [
+      { name: "Soda", quantity: 1, unit: "bottle" }
+    ],
+    ingredients: "Soda",
+    steps: "Chill and serve.",
+    notes: "A simple drink entry for logging only, not an everyday nutrition goal item.",
+    tags: ["Drink", "Treat", "Low Priority"]
+  }
+};
+
+function getRecipeDefaults(recipeName) {
+  return RECIPE_DETAILS_BY_NAME[String(recipeName || "").trim().toLowerCase()] || null;
+}
+
 function readStorage(key, fallback) {
   const raw = localStorage.getItem(key);
   if (!raw) {
@@ -565,22 +1539,37 @@ function normalizeRecipes(data) {
   return data.map((recipe) => {
     const recipeName = recipe.recipeName || recipe.name || "";
     const category = normalizeRecipeCategory(recipe.category || recipe.type || "");
+    const defaults = getRecipeDefaults(recipeName);
+    const rawIngredients = Array.isArray(recipe.ingredients) ? recipe.ingredients.join(", ") : recipe.ingredients || "";
+    const rawSteps = recipe.steps || "";
+    const rawNotes = recipe.notes || "";
+    const rawStructuredIngredients = normalizeStructuredIngredients(recipe.structuredIngredients || recipe.structured_ingredients || []);
+    const existingTags = Array.isArray(recipe.tags)
+      ? recipe.tags
+      : typeof recipe.tags === "string"
+        ? recipe.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
+        : [];
+    const isImportedMenuSeed = rawNotes.toLowerCase().includes("imported from your food hub menu list");
+    const hasPlaceholderIngredients = !rawIngredients || rawIngredients === "Add ingredients for this dish.";
+    const hasPlaceholderSteps = !rawSteps || rawSteps === "Add your cooking steps or preparation notes for this dish.";
+    const shouldApplyDefaults = Boolean(defaults) && (isImportedMenuSeed || hasPlaceholderIngredients || hasPlaceholderSteps || rawStructuredIngredients.length === 0);
+    const mergedTags = shouldApplyDefaults
+      ? Array.from(new Set([...existingTags, ...(defaults.tags || [])]))
+      : existingTags;
 
     return {
       id: recipe.id || crypto.randomUUID(),
       recipeName,
       category,
-      difficulty: recipe.difficulty || "Easy",
-      prepTime: recipe.prepTime || recipe.time || "",
-      ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients.join(", ") : recipe.ingredients || "",
-      steps: recipe.steps || "",
-      notes: recipe.notes || "",
+      difficulty: shouldApplyDefaults && (recipe.difficulty === "Varies" || !recipe.difficulty) ? defaults.difficulty || recipe.difficulty || "Easy" : recipe.difficulty || "Easy",
+      prepTime: shouldApplyDefaults && (!recipe.prepTime && !recipe.time || recipe.prepTime === "Varies" || recipe.time === "Varies") ? defaults.prepTime || recipe.prepTime || recipe.time || "" : recipe.prepTime || recipe.time || "",
+      servings: shouldApplyDefaults && defaults.servings && Number(recipe.servings || recipe.serving_count || 1) === 1 ? defaults.servings : Math.max(Number(recipe.servings || recipe.serving_count || 1) || 1, 1),
+      structuredIngredients: shouldApplyDefaults && rawStructuredIngredients.length === 0 ? normalizeStructuredIngredients(defaults.structuredIngredients || []) : rawStructuredIngredients,
+      ingredients: shouldApplyDefaults && hasPlaceholderIngredients ? defaults.ingredients || rawIngredients : rawIngredients,
+      steps: shouldApplyDefaults && hasPlaceholderSteps ? defaults.steps || rawSteps : rawSteps,
+      notes: shouldApplyDefaults && isImportedMenuSeed ? defaults.notes || rawNotes : rawNotes,
       imageUrl: resolveRecipeImage(recipe),
-      tags: Array.isArray(recipe.tags)
-        ? recipe.tags
-        : typeof recipe.tags === "string"
-          ? recipe.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
-          : []
+      tags: mergedTags
     };
   });
 }
@@ -599,6 +1588,10 @@ function normalizeThresholdMode(mode) {
 
 function roundInventoryValue(value) {
   return Number(Number(value || 0).toFixed(1));
+}
+
+function nullableNumber(value) {
+  return value === "" || value == null ? null : Number(value);
 }
 
 function normalizeInventory(data) {
@@ -636,7 +1629,13 @@ function normalizeInventory(data) {
         ? item.tags
         : typeof item.tags === "string"
           ? item.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
-          : []
+          : [],
+      nutritionServingAmount: item.nutritionServingAmount ?? item.nutrition_serving_amount ?? "",
+      nutritionServingUnit: item.nutritionServingUnit ?? item.nutrition_serving_unit ?? "",
+      calories: item.calories ?? "",
+      proteinG: item.proteinG ?? item.protein_g ?? "",
+      carbsG: item.carbsG ?? item.carbs_g ?? "",
+      fatG: item.fatG ?? item.fat_g ?? ""
     };
   });
 }
@@ -798,12 +1797,99 @@ function getShoppingSignal(alertItems) {
   };
 }
 
+function getCurrentDateTimeLocalValue() {
+  const date = new Date();
+  const offset = date.getTimezoneOffset();
+  const localDate = new Date(date.getTime() - offset * 60 * 1000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function isSameLocalDay(dateA, dateB = new Date()) {
+  const a = new Date(dateA);
+  const b = new Date(dateB);
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function emptyFoodLog() {
+  return {
+    recipeName: "",
+    servingsEaten: 1,
+    consumedAt: getCurrentDateTimeLocalValue(),
+    notes: ""
+  };
+}
+
+function normalizeFoodLog(data) {
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((entry) => ({
+      id: entry?.id || crypto.randomUUID(),
+      recipeId: entry?.recipeId || "",
+      recipeName: entry?.recipeName || entry?.itemName || "",
+      servingsEaten: Math.max(Number(entry?.servingsEaten || entry?.servings_eaten || 1) || 1, 1),
+      consumedAt: entry?.consumedAt || entry?.consumed_at || getCurrentDateTimeLocalValue(),
+      calories: Number(entry?.calories || 0),
+      proteinG: Number(entry?.proteinG || entry?.protein_g || 0),
+      carbsG: Number(entry?.carbsG || entry?.carbs_g || 0),
+      fatG: Number(entry?.fatG || entry?.fat_g || 0),
+      notes: entry?.notes || ""
+    }))
+    .sort((a, b) => new Date(b.consumedAt) - new Date(a.consumedAt));
+}
+
+function defaultDailyNutritionGoals() {
+  return {
+    calories: 2000,
+    proteinG: 75,
+    carbsG: 250,
+    fatG: 70
+  };
+}
+
+function normalizeDailyNutritionGoals(data) {
+  const defaults = defaultDailyNutritionGoals();
+  return {
+    calories: Math.max(Number(data?.calories ?? defaults.calories) || defaults.calories, 0),
+    proteinG: Math.max(Number(data?.proteinG ?? data?.protein_g ?? defaults.proteinG) || defaults.proteinG, 0),
+    carbsG: Math.max(Number(data?.carbsG ?? data?.carbs_g ?? defaults.carbsG) || defaults.carbsG, 0),
+    fatG: Math.max(Number(data?.fatG ?? data?.fat_g ?? defaults.fatG) || defaults.fatG, 0)
+  };
+}
+
+function emptyStructuredIngredient() {
+  return {
+    name: "",
+    quantity: "",
+    unit: ""
+  };
+}
+
+function normalizeStructuredIngredients(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .map((item) => ({
+      name: String(item?.name || item?.itemName || "").trim(),
+      quantity: item?.quantity === "" || item?.quantity == null ? "" : Number(item.quantity),
+      unit: String(item?.unit || "").trim()
+    }))
+    .filter((item) => item.name || item.quantity !== "" || item.unit);
+}
+
+function formatStructuredIngredient(item) {
+  const quantity = item?.quantity !== "" && item?.quantity != null ? `${item.quantity} ` : "";
+  const unit = item?.unit ? `${item.unit} ` : "";
+  return `${quantity}${unit}${item?.name || ""}`.trim();
+}
+
 function emptyRecipe() {
   return {
     recipeName: "",
     category: "",
     difficulty: "",
     prepTime: "",
+    servings: 1,
+    structuredIngredients: [emptyStructuredIngredient()],
     ingredients: "",
     steps: "",
     notes: "",
@@ -824,7 +1910,13 @@ function emptyInventory() {
     threshold: 0,
     notes: "",
     priority: "Essential",
-    tags: ""
+    tags: "",
+    nutritionServingAmount: "",
+    nutritionServingUnit: "",
+    calories: "",
+    proteinG: "",
+    carbsG: "",
+    fatG: ""
   };
 }
 
@@ -847,6 +1939,8 @@ function recipeToRow(recipe, householdId) {
     category: recipe.category,
     difficulty: recipe.difficulty,
     prep_time: recipe.prepTime,
+    serving_count: Math.max(Number(recipe.servings || 1) || 1, 1),
+    structured_ingredients: normalizeStructuredIngredients(recipe.structuredIngredients || []),
     ingredients: recipe.ingredients,
     steps: recipe.steps,
     notes: recipe.notes,
@@ -869,7 +1963,13 @@ function inventoryToRow(item, householdId) {
     threshold_percent: Number(item.thresholdPercent || 25),
     notes: item.notes,
     priority: normalizePriority(item.priority),
-    tags: item.tags || []
+    tags: item.tags || [],
+    nutrition_serving_amount: nullableNumber(item.nutritionServingAmount),
+    nutrition_serving_unit: item.nutritionServingUnit || null,
+    calories: nullableNumber(item.calories),
+    protein_g: nullableNumber(item.proteinG),
+    carbs_g: nullableNumber(item.carbsG),
+    fat_g: nullableNumber(item.fatG)
   };
 }
 
@@ -889,6 +1989,22 @@ function groceryToRow(item, householdId) {
   };
 }
 
+function foodLogToRow(entry, householdId, userId) {
+  return {
+    id: entry.id,
+    household_id: householdId,
+    recipe_id: entry.recipeId || null,
+    recipe_name: entry.recipeName,
+    servings_eaten: Number(entry.servingsEaten || 1),
+    consumed_at: entry.consumedAt,
+    calories: Number(entry.calories || 0),
+    protein_g: Number(entry.proteinG || 0),
+    carbs_g: Number(entry.carbsG || 0),
+    fat_g: Number(entry.fatG || 0),
+    notes: entry.notes || "",
+    logged_by: userId || null
+  };
+}
 
 function normalizeChopboardSession(items) {
   if (!Array.isArray(items)) return [];
@@ -923,13 +2039,50 @@ function normalizeIngredientToken(token) {
 
 function getRecipeIngredientTokens(ingredientsText) {
   return String(ingredientsText || "")
-    .split(/[,\n]/)
+    .split(/[\n,]/)
     .map((token) => normalizeIngredientToken(token))
     .filter(Boolean);
 }
 
+function getRecipeIngredientNames(recipe) {
+  const structuredNames = normalizeStructuredIngredients(recipe?.structuredIngredients || [])
+    .map((ingredient) => normalizeIngredientToken(ingredient.name))
+    .filter(Boolean);
+
+  return Array.from(new Set([...structuredNames, ...getRecipeIngredientTokens(recipe?.ingredients)]));
+}
+
+function normalizeMeasurementUnit(unit) {
+  const normalized = String(unit || "").toLowerCase().trim();
+  if (!normalized) return "";
+  if (normalized.includes("piece") || normalized === "pcs" || normalized === "pc" || normalized === "item") return "piece";
+  if (normalized.includes("clove")) return "clove";
+  if (normalized.includes("cup")) return "cup";
+  if (normalized.includes("tbsp") || normalized.includes("tablespoon")) return "tbsp";
+  if (normalized.includes("tsp") || normalized.includes("teaspoon")) return "tsp";
+  if (normalized.includes("kg")) return "kg";
+  if (normalized === "g" || normalized.includes(" gram") || normalized.startsWith("g ") || normalized.endsWith(" g") ) return "g";
+  if (normalized.includes("oz")) return "oz";
+  if (normalized.includes("lb")) return "lb";
+  if (normalized.includes("pack")) return "pack";
+  if (normalized.includes("bag")) return "bag";
+  if (normalized.includes("bottle")) return "bottle";
+  if (normalized.includes("jar")) return "jar";
+  if (normalized.includes("box")) return "box";
+  return normalized;
+}
+
+function getRecipeIngredientNameSuggestions(value, inventoryItems) {
+  const searchValue = toSearchText(value);
+  if (!searchValue) return [];
+
+  return Array.from(new Set(inventoryItems.map((item) => item.itemName)))
+    .filter((name) => toSearchText(name).includes(searchValue))
+    .slice(0, 8);
+}
+
 function getRecipeInventoryMatches(recipe, inventoryItems) {
-  const ingredientTokens = getRecipeIngredientTokens(recipe?.ingredients);
+  const ingredientTokens = getRecipeIngredientNames(recipe);
   const matches = [];
   const seenInventoryIds = new Set();
 
@@ -945,6 +2098,74 @@ function getRecipeInventoryMatches(recipe, inventoryItems) {
   });
 
   return matches;
+}
+
+function hasNutritionData(item) {
+  return [item?.calories, item?.proteinG, item?.carbsG, item?.fatG].some((value) => value !== "" && value != null);
+}
+
+function formatNutritionNumber(value) {
+  if (value === "" || value == null || Number.isNaN(Number(value))) return "-";
+  const numericValue = Number(value);
+  return Number.isInteger(numericValue) ? String(numericValue) : String(roundInventoryValue(numericValue));
+}
+
+function getRecipeNutritionEstimate(recipe, inventoryItems) {
+  const structuredIngredients = normalizeStructuredIngredients(recipe?.structuredIngredients || []);
+  const structuredMatches = structuredIngredients.map((ingredient) => {
+    const inventoryItem = inventoryItems.find((item) => normalizeIngredientToken(item.itemName) === normalizeIngredientToken(ingredient.name));
+    if (!inventoryItem || !hasNutritionData(inventoryItem)) {
+      return inventoryItem ? { ingredient, inventoryItem, multiplier: 0, counted: false } : { ingredient, inventoryItem: null, multiplier: 0, counted: false };
+    }
+
+    const quantity = Number(ingredient.quantity || 0);
+    const servingAmount = Number(inventoryItem.nutritionServingAmount || 1) || 1;
+    const ingredientUnit = normalizeMeasurementUnit(ingredient.unit);
+    const nutritionUnit = normalizeMeasurementUnit(inventoryItem.nutritionServingUnit);
+    const multiplier = quantity > 0 && ingredientUnit && nutritionUnit && ingredientUnit === nutritionUnit
+      ? quantity / servingAmount
+      : 1;
+
+    return { ingredient, inventoryItem, multiplier, counted: true };
+  });
+
+  const useStructuredEstimate = structuredIngredients.length > 0;
+  const nutritionItems = useStructuredEstimate
+    ? structuredMatches.filter((match) => match.counted)
+    : getRecipeInventoryMatches(recipe, inventoryItems).filter(hasNutritionData).map((item) => ({ inventoryItem: item, multiplier: 1, counted: true }));
+  const matchedItems = useStructuredEstimate
+    ? structuredMatches.filter((match) => match.inventoryItem).map((match) => match.inventoryItem)
+    : getRecipeInventoryMatches(recipe, inventoryItems);
+
+  const totals = nutritionItems.reduce((accumulator, match) => ({
+    calories: accumulator.calories + Number(match.inventoryItem.calories || 0) * match.multiplier,
+    proteinG: accumulator.proteinG + Number(match.inventoryItem.proteinG || 0) * match.multiplier,
+    carbsG: accumulator.carbsG + Number(match.inventoryItem.carbsG || 0) * match.multiplier,
+    fatG: accumulator.fatG + Number(match.inventoryItem.fatG || 0) * match.multiplier
+  }), {
+    calories: 0,
+    proteinG: 0,
+    carbsG: 0,
+    fatG: 0
+  });
+
+  const servings = Math.max(Number(recipe?.servings || 1) || 1, 1);
+
+  return {
+    matchedItems,
+    nutritionItems,
+    servings,
+    hasEstimate: nutritionItems.length > 0,
+    usesStructuredEstimate: useStructuredEstimate,
+    calories: Math.round(totals.calories),
+    proteinG: roundInventoryValue(totals.proteinG),
+    carbsG: roundInventoryValue(totals.carbsG),
+    fatG: roundInventoryValue(totals.fatG),
+    caloriesPerServing: Math.round(totals.calories / servings),
+    proteinPerServing: roundInventoryValue(totals.proteinG / servings),
+    carbsPerServing: roundInventoryValue(totals.carbsG / servings),
+    fatPerServing: roundInventoryValue(totals.fatG / servings)
+  };
 }
 
 function toSearchText(value) {
@@ -968,14 +2189,15 @@ function splitIngredientSuggestions(ingredientsText) {
 }
 
 function getRecipeSearchBlob(recipe) {
-  return [recipe.recipeName, recipe.ingredients, ...(recipe.tags || [])].join(" ").toLowerCase();
+  return [recipe.recipeName, recipe.ingredients, ...(recipe.tags || []), ...normalizeStructuredIngredients(recipe.structuredIngredients || []).map((ingredient) => ingredient.name)].join(" ").toLowerCase();
 }
 
 function getRecipeExcludeTerms(recipe) {
   return Array.from(new Set([
     recipe.recipeName,
     ...(recipe.tags || []),
-    ...splitIngredientSuggestions(recipe.ingredients)
+    ...splitIngredientSuggestions(recipe.ingredients),
+    ...normalizeStructuredIngredients(recipe.structuredIngredients || []).map((ingredient) => ingredient.name)
   ].map((term) => String(term || "").trim()).filter(Boolean)));
 }
 
@@ -1027,6 +2249,8 @@ function App() {
   const [inventory, setInventory] = useState(() => normalizeInventory(readStorage(STORAGE_KEYS.inventory, defaultInventory)));
   const [grocery, setGrocery] = useState(() => normalizeGrocery(readStorage(STORAGE_KEYS.grocery, defaultGrocery)));
   const [chopboardItems, setChopboardItems] = useState(() => normalizeChopboardSession(readStorage(STORAGE_KEYS.chopboard, [])));
+  const [foodLog, setFoodLog] = useState(() => normalizeFoodLog(readStorage(STORAGE_KEYS.foodLog, [])));
+  const [dailyNutritionGoals, setDailyNutritionGoals] = useState(() => normalizeDailyNutritionGoals(readStorage(STORAGE_KEYS.dailyNutritionGoals, defaultDailyNutritionGoals())));
   const [notificationPermission, setNotificationPermission] = useState(
     typeof Notification === "undefined" ? "unsupported" : Notification.permission
   );
@@ -1042,14 +2266,17 @@ function App() {
   const [recipeForm, setRecipeForm] = useState(emptyRecipe());
   const [inventoryForm, setInventoryForm] = useState(emptyInventory());
   const [groceryForm, setGroceryForm] = useState(emptyGrocery());
+  const [foodLogForm, setFoodLogForm] = useState(emptyFoodLog());
 
   const [editingRecipeId, setEditingRecipeId] = useState(null);
   const [editingInventoryId, setEditingInventoryId] = useState(null);
   const [editingGroceryId, setEditingGroceryId] = useState(null);
+  const [editingFoodLogId, setEditingFoodLogId] = useState(null);
   const [isRecipeFormOpen, setIsRecipeFormOpen] = useState(false);
   const [recipeViewMode, setRecipeViewMode] = useState("text");
   const [isInventoryFormOpen, setIsInventoryFormOpen] = useState(false);
   const [isGroceryFormOpen, setIsGroceryFormOpen] = useState(false);
+  const [isFoodLogFormOpen, setIsFoodLogFormOpen] = useState(false);
   const [focusedRecipeId, setFocusedRecipeId] = useState(null);
   const [menuSearchFilter, setMenuSearchFilter] = useState("");
   const [menuSearchTerms, setMenuSearchTerms] = useState([]);
@@ -1075,6 +2302,7 @@ function App() {
   const recipeFormSectionRef = useRef(null);
   const inventoryFormSectionRef = useRef(null);
   const groceryFormSectionRef = useRef(null);
+  const foodLogFormSectionRef = useRef(null);
 
   useEffect(() => {
     supabaseClient.auth.getSession().then(({ data }) => {
@@ -1098,6 +2326,8 @@ function App() {
   useEffect(() => writeStorage(STORAGE_KEYS.inventory, inventory), [inventory]);
   useEffect(() => writeStorage(STORAGE_KEYS.grocery, grocery), [grocery]);
   useEffect(() => writeStorage(STORAGE_KEYS.chopboard, chopboardItems), [chopboardItems]);
+  useEffect(() => writeStorage(STORAGE_KEYS.foodLog, foodLog), [foodLog]);
+  useEffect(() => writeStorage(STORAGE_KEYS.dailyNutritionGoals, dailyNutritionGoals), [dailyNutritionGoals]);
 
   function scrollToSection(sectionRef) {
     requestAnimationFrame(() => {
@@ -1142,28 +2372,33 @@ function App() {
         const nextHouseholdId = profile.household_id;
         setHouseholdId(nextHouseholdId);
 
-        const [recipesResponse, inventoryResponse, groceryResponse] = await Promise.all([
+        const [recipesResponse, inventoryResponse, groceryResponse, foodLogResponse] = await Promise.all([
           supabaseClient
             .from("recipes")
-            .select("id, recipe_name, category, difficulty, prep_time, ingredients, steps, notes, image_url, tags")
+            .select("id, recipe_name, category, difficulty, prep_time, serving_count, structured_ingredients, ingredients, steps, notes, image_url, tags")
             .eq("household_id", nextHouseholdId)
             .order("created_at", { ascending: false }),
           supabaseClient
             .from("inventory_items")
-            .select("id, item_name, category, quantity, unit, low_stock_threshold, desired_amount, threshold_mode, threshold_percent, notes, priority, tags")
+            .select("id, item_name, category, quantity, unit, low_stock_threshold, desired_amount, threshold_mode, threshold_percent, notes, priority, tags, nutrition_serving_amount, nutrition_serving_unit, calories, protein_g, carbs_g, fat_g")
             .eq("household_id", nextHouseholdId)
             .order("created_at", { ascending: false }),
           supabaseClient
             .from("grocery_items")
             .select("id, item_name, quantity, unit, category, bought, source, linked_inventory_id, suppressed, priority")
             .eq("household_id", nextHouseholdId)
-            .order("created_at", { ascending: false })
+            .order("created_at", { ascending: false }),
+          supabaseClient
+            .from("food_log_entries")
+            .select("id, recipe_id, recipe_name, servings_eaten, consumed_at, calories, protein_g, carbs_g, fat_g, notes, logged_by")
+            .eq("household_id", nextHouseholdId)
+            .order("consumed_at", { ascending: false })
         ]);
 
         if (!isMounted) return;
 
-        if (recipesResponse.error || inventoryResponse.error || groceryResponse.error) {
-          console.error("Unable to load Supabase household data", recipesResponse.error || inventoryResponse.error || groceryResponse.error);
+        if (recipesResponse.error || inventoryResponse.error || groceryResponse.error || foodLogResponse.error) {
+          console.error("Unable to load Supabase household data", recipesResponse.error || inventoryResponse.error || groceryResponse.error || foodLogResponse.error);
           setRemoteLoadError("We could not load your shared household data from Supabase.");
           setHasRemoteDataLoaded(true);
           setIsHydratingData(false);
@@ -1176,6 +2411,8 @@ function App() {
           category: recipe.category,
           difficulty: recipe.difficulty,
           prepTime: recipe.prep_time,
+          servings: recipe.serving_count,
+          structuredIngredients: recipe.structured_ingredients,
           ingredients: recipe.ingredients,
           steps: recipe.steps,
           notes: recipe.notes,
@@ -1194,7 +2431,13 @@ function App() {
           thresholdPercent: item.threshold_percent,
           notes: item.notes,
           priority: item.priority,
-          tags: item.tags || []
+          tags: item.tags || [],
+          nutritionServingAmount: item.nutrition_serving_amount,
+          nutritionServingUnit: item.nutrition_serving_unit,
+          calories: item.calories,
+          proteinG: item.protein_g,
+          carbsG: item.carbs_g,
+          fatG: item.fat_g
         })));
         const remoteGrocery = normalizeGrocery((groceryResponse.data || []).map((item) => ({
           id: item.id,
@@ -1208,13 +2451,26 @@ function App() {
           suppressed: item.suppressed,
           priority: item.priority
         })));
+        const remoteFoodLog = normalizeFoodLog((foodLogResponse.data || []).map((entry) => ({
+          id: entry.id,
+          recipeId: entry.recipe_id,
+          recipeName: entry.recipe_name,
+          servingsEaten: entry.servings_eaten,
+          consumedAt: entry.consumed_at,
+          calories: entry.calories,
+          proteinG: entry.protein_g,
+          carbsG: entry.carbs_g,
+          fatG: entry.fat_g,
+          notes: entry.notes || ""
+        })));
 
-        const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0;
+        const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0 || remoteFoodLog.length > 0;
 
         if (!hasRemoteData) {
           const seededRecipes = mergeSeedRecipes(recipes, normalizeRecipes(defaultRecipes));
           const seededInventory = inventory;
           const seededGrocery = grocery;
+          const seededFoodLog = foodLog;
 
           const seedResponses = await Promise.all([
             seededRecipes.length
@@ -1225,6 +2481,9 @@ function App() {
               : Promise.resolve({ error: null }),
             seededGrocery.length
               ? supabaseClient.from("grocery_items").insert(seededGrocery.map((item) => groceryToRow(item, nextHouseholdId)))
+              : Promise.resolve({ error: null }),
+            seededFoodLog.length
+              ? supabaseClient.from("food_log_entries").insert(seededFoodLog.map((entry) => foodLogToRow(entry, nextHouseholdId, currentUser.id)))
               : Promise.resolve({ error: null })
           ]);
 
@@ -1240,10 +2499,12 @@ function App() {
           setRecipes(seededRecipes);
           setInventory(seededInventory);
           setGrocery(seededGrocery);
+          setFoodLog(seededFoodLog);
         } else {
           setRecipes(mergeSeedRecipes(remoteRecipes, normalizeRecipes(defaultRecipes)));
           setInventory(remoteInventory);
           setGrocery(remoteGrocery);
+          setFoodLog(remoteFoodLog);
         }
 
         setHasRemoteDataLoaded(true);
@@ -1329,7 +2590,8 @@ function App() {
       const syncResponses = await Promise.all([
         syncTable("recipes", recipes.map((recipe) => recipeToRow(recipe, householdId))),
         syncTable("inventory_items", inventory.map((item) => inventoryToRow(item, householdId))),
-        syncTable("grocery_items", grocery.map((item) => groceryToRow(item, householdId)))
+        syncTable("grocery_items", grocery.map((item) => groceryToRow(item, householdId))),
+        syncTable("food_log_entries", foodLog.map((entry) => foodLogToRow(entry, householdId, currentUser?.id)))
       ]);
 
       const syncError = syncResponses.find((response) => response?.error)?.error;
@@ -1343,7 +2605,7 @@ function App() {
         clearTimeout(remoteSyncTimeoutRef.current);
       }
     };
-  }, [currentUser, householdId, hasRemoteDataLoaded, isHydratingData, recipes, inventory, grocery]);
+  }, [currentUser, householdId, hasRemoteDataLoaded, isHydratingData, recipes, inventory, grocery, foodLog]);
 
   const inventoryWithStatus = useMemo(
     () => inventory.map((item) => {
@@ -1724,6 +2986,12 @@ function App() {
     setIsGroceryFormOpen(false);
   }
 
+  function resetFoodLogForm() {
+    setEditingFoodLogId(null);
+    setFoodLogForm(emptyFoodLog());
+    setIsFoodLogFormOpen(false);
+  }
+
   function saveRecipe(event) {
     event.preventDefault();
     if (!recipeForm.category) {
@@ -1740,8 +3008,12 @@ function App() {
       return;
     }
 
+    const normalizedStructuredIngredients = normalizeStructuredIngredients(recipeForm.structuredIngredients);
     const normalized = {
       ...recipeForm,
+      servings: Math.max(Number(recipeForm.servings || 1) || 1, 1),
+      structuredIngredients: normalizedStructuredIngredients,
+      ingredients: recipeForm.ingredients.trim() || normalizedStructuredIngredients.map((ingredient) => formatStructuredIngredient(ingredient)).join(", "),
       tags: recipeForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
     };
 
@@ -1756,6 +3028,37 @@ function App() {
     }
 
     resetRecipeForm();
+  }
+
+  function saveFoodLog(event) {
+    event.preventDefault();
+    const matchedRecipe = recipes.find((recipe) => recipe.recipeName === foodLogForm.recipeName);
+    if (!matchedRecipe) {
+      alert("Please choose a recipe to log.");
+      return;
+    }
+
+    const estimate = getRecipeNutritionEstimate(matchedRecipe, inventoryWithStatus);
+    const servingsEaten = Math.max(Number(foodLogForm.servingsEaten || 1) || 1, 1);
+    const normalized = {
+      recipeId: matchedRecipe.id,
+      recipeName: matchedRecipe.recipeName,
+      servingsEaten,
+      consumedAt: foodLogForm.consumedAt || getCurrentDateTimeLocalValue(),
+      calories: Math.round((estimate.caloriesPerServing || 0) * servingsEaten),
+      proteinG: roundInventoryValue((estimate.proteinPerServing || 0) * servingsEaten),
+      carbsG: roundInventoryValue((estimate.carbsPerServing || 0) * servingsEaten),
+      fatG: roundInventoryValue((estimate.fatPerServing || 0) * servingsEaten),
+      notes: foodLogForm.notes.trim()
+    };
+
+    if (editingFoodLogId) {
+      setFoodLog((current) => normalizeFoodLog(current.map((entry) => entry.id === editingFoodLogId ? { ...normalized, id: editingFoodLogId } : entry)));
+    } else {
+      setFoodLog((current) => normalizeFoodLog([{ ...normalized, id: crypto.randomUUID() }, ...current]));
+    }
+
+    resetFoodLogForm();
   }
 
   function saveInventory(event) {
@@ -1788,7 +3091,13 @@ function App() {
       thresholdPercent,
       threshold: thresholdUnits,
       priority: inventoryForm.priority || "Essential",
-      tags: inventoryForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
+      tags: inventoryForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+      nutritionServingAmount: inventoryForm.nutritionServingAmount === "" ? "" : Number(inventoryForm.nutritionServingAmount),
+      nutritionServingUnit: inventoryForm.nutritionServingUnit.trim(),
+      calories: inventoryForm.calories === "" ? "" : Number(inventoryForm.calories),
+      proteinG: inventoryForm.proteinG === "" ? "" : Number(inventoryForm.proteinG),
+      carbsG: inventoryForm.carbsG === "" ? "" : Number(inventoryForm.carbsG),
+      fatG: inventoryForm.fatG === "" ? "" : Number(inventoryForm.fatG)
     };
 
     if (editingInventoryId) {
@@ -1820,7 +3129,13 @@ function App() {
                 thresholdPercent: normalized.thresholdPercent || item.thresholdPercent,
                 notes: normalized.notes || item.notes,
                 priority: normalized.priority || item.priority,
-                tags: Array.from(new Set([...(item.tags || []), ...(normalized.tags || [])]))
+                tags: Array.from(new Set([...(item.tags || []), ...(normalized.tags || [])])),
+                nutritionServingAmount: normalized.nutritionServingAmount !== "" ? normalized.nutritionServingAmount : item.nutritionServingAmount,
+                nutritionServingUnit: normalized.nutritionServingUnit || item.nutritionServingUnit,
+                calories: normalized.calories !== "" ? normalized.calories : item.calories,
+                proteinG: normalized.proteinG !== "" ? normalized.proteinG : item.proteinG,
+                carbsG: normalized.carbsG !== "" ? normalized.carbsG : item.carbsG,
+                fatG: normalized.fatG !== "" ? normalized.fatG : item.fatG
               }
             : item
         );
@@ -1887,10 +3202,37 @@ function App() {
 
   function startRecipeEdit(recipe) {
     setEditingRecipeId(recipe.id);
-    setRecipeForm({ ...recipe, tags: recipe.tags.join(", ") });
+    setRecipeForm({
+      ...recipe,
+      servings: recipe.servings || 1,
+      structuredIngredients: normalizeStructuredIngredients(recipe.structuredIngredients || []).length
+        ? normalizeStructuredIngredients(recipe.structuredIngredients || [])
+        : [emptyStructuredIngredient()],
+      tags: recipe.tags.join(", ")
+    });
     setIsRecipeFormOpen(true);
     setActiveTab("recipes");
     scrollToSection(recipeFormSectionRef);
+  }
+
+  function startFoodLogEdit(entry) {
+    setEditingFoodLogId(entry.id);
+    setFoodLogForm({
+      recipeName: entry.recipeName,
+      servingsEaten: entry.servingsEaten,
+      consumedAt: entry.consumedAt,
+      notes: entry.notes || ""
+    });
+    setIsFoodLogFormOpen(true);
+    setActiveTab("food-log");
+    scrollToSection(foodLogFormSectionRef);
+  }
+
+  function deleteFoodLog(id) {
+    setFoodLog((current) => current.filter((entry) => entry.id !== id));
+    if (editingFoodLogId === id) {
+      resetFoodLogForm();
+    }
   }
 
   function startInventoryEdit(item) {
@@ -1906,7 +3248,13 @@ function App() {
       threshold: item.threshold,
       notes: item.notes,
       priority: item.priority || "Essential",
-      tags: (item.tags || []).join(", ")
+      tags: (item.tags || []).join(", "),
+      nutritionServingAmount: item.nutritionServingAmount ?? "",
+      nutritionServingUnit: item.nutritionServingUnit || "",
+      calories: item.calories ?? "",
+      proteinG: item.proteinG ?? "",
+      carbsG: item.carbsG ?? "",
+      fatG: item.fatG ?? ""
     });
     setIsInventoryFormOpen(true);
     setActiveTab("inventory");
@@ -2214,10 +3562,36 @@ function App() {
     { id: "chopboard", label: "Chopboard", eyebrow: "Open Session", description: "Collect menu items, confirm the session, and close it to estimate pantry depletion." },
     { id: "recipes", label: "Recipes", eyebrow: "Cookbook", description: "Keep full recipes, notes, tags, and images in one place." },
     { id: "inventory", label: "Kitchen Inventory", eyebrow: "Track Pantry", description: "Update what you have at home so grocery needs stay accurate." },
-    { id: "grocery", label: "Grocery List", eyebrow: "Shop Better", description: "See what needs to be bought and mark things restock after shopping." }
+    { id: "grocery", label: "Grocery List", eyebrow: "Shop Better", description: "See what needs to be bought and mark things restock after shopping." },
+    { id: "food-log", label: "Food Log", eyebrow: "Track Meals", description: "Log what you ate and see your daily nutrition totals." }
   ];
 
   const activeTabMeta = tabs.find((tab) => tab.id === activeTab) || tabs[0];
+  const recipeOptions = useMemo(
+    () => recipes.map((recipe) => recipe.recipeName).sort((a, b) => a.localeCompare(b)),
+    [recipes]
+  );
+  const selectedFoodLogRecipe = useMemo(
+    () => recipes.find((recipe) => recipe.recipeName === foodLogForm.recipeName) || null,
+    [recipes, foodLogForm.recipeName]
+  );
+  const selectedFoodLogEstimate = useMemo(
+    () => selectedFoodLogRecipe ? getRecipeNutritionEstimate(selectedFoodLogRecipe, inventoryWithStatus) : null,
+    [selectedFoodLogRecipe, inventoryWithStatus]
+  );
+  const todaysFoodLogEntries = useMemo(
+    () => foodLog.filter((entry) => isSameLocalDay(entry.consumedAt)),
+    [foodLog]
+  );
+  const todaysNutritionTotals = useMemo(
+    () => todaysFoodLogEntries.reduce((totals, entry) => ({
+      calories: totals.calories + Number(entry.calories || 0),
+      proteinG: totals.proteinG + Number(entry.proteinG || 0),
+      carbsG: totals.carbsG + Number(entry.carbsG || 0),
+      fatG: totals.fatG + Number(entry.fatG || 0)
+    }), { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 }),
+    [todaysFoodLogEntries]
+  );
   const displayName = currentUser?.email ? currentUser.email.split("@")[0] : "Account";
 
   if (session && currentUser && (isHydratingData || !hasRemoteDataLoaded)) {
@@ -2744,7 +4118,58 @@ function App() {
                   <SelectField label="Category" value={recipeForm.category} onChange={(value) => setRecipeForm({ ...recipeForm, category: value })} options={RECIPE_CATEGORIES} placeholder="Select a category" required />
                   <InputField label="Difficulty" value={recipeForm.difficulty} onChange={(value) => setRecipeForm({ ...recipeForm, difficulty: value })} required />
                   <InputField label="Prep Time" value={recipeForm.prepTime} onChange={(value) => setRecipeForm({ ...recipeForm, prepTime: value })} required />
-                  <TextAreaField label="Ingredients" value={recipeForm.ingredients} onChange={(value) => setRecipeForm({ ...recipeForm, ingredients: value })} required />
+                  <InputField label="Servings" type="number" value={recipeForm.servings} onChange={(value) => setRecipeForm({ ...recipeForm, servings: value })} placeholder="4" required />
+                  <div className="md:col-span-2 rounded-[1.5rem] border border-kitchen-sage/60 bg-kitchen-cream/70 p-4">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-kitchen-moss">Structured Ingredients</p>
+                        <p className="text-xs text-slate-500">Add ingredient rows with quantity and unit to improve nutrition accuracy. The text box below can stay as notes or fallback text.</p>
+                      </div>
+                      <SecondaryButton type="button" onClick={() => setRecipeForm((current) => ({ ...current, structuredIngredients: [...(Array.isArray(current.structuredIngredients) ? current.structuredIngredients : []), emptyStructuredIngredient()] }))}>
+                        Add Ingredient Row
+                      </SecondaryButton>
+                    </div>
+                    <div className="space-y-4">
+                      {(Array.isArray(recipeForm.structuredIngredients) ? recipeForm.structuredIngredients : []).length ? (Array.isArray(recipeForm.structuredIngredients) ? recipeForm.structuredIngredients : []).map((ingredient, index) => (
+                        <div key={`${ingredient.name}-${index}`} className="grid gap-3 rounded-[1.25rem] border border-kitchen-sage/50 bg-white p-3 md:grid-cols-[1.6fr_0.7fr_0.7fr_auto] md:items-end">
+                          <SuggestInputField
+                            label={`Ingredient ${index + 1}`}
+                            value={ingredient.name}
+                            onChange={(value) => setRecipeForm((current) => ({
+                              ...current,
+                              structuredIngredients: (Array.isArray(current.structuredIngredients) ? current.structuredIngredients : []).map((row, rowIndex) => rowIndex === index ? { ...row, name: value } : row)
+                            }))}
+                            onSelectSuggestion={(value) => setRecipeForm((current) => ({
+                              ...current,
+                              structuredIngredients: (Array.isArray(current.structuredIngredients) ? current.structuredIngredients : []).map((row, rowIndex) => rowIndex === index ? { ...row, name: value } : row)
+                            }))}
+                            suggestions={getRecipeIngredientNameSuggestions(ingredient.name, inventoryWithStatus)}
+                            placeholder="Paneer"
+                          />
+                          <InputField label="Qty" type="number" value={ingredient.quantity} onChange={(value) => setRecipeForm((current) => ({
+                            ...current,
+                            structuredIngredients: (Array.isArray(current.structuredIngredients) ? current.structuredIngredients : []).map((row, rowIndex) => rowIndex === index ? { ...row, quantity: value } : row)
+                          }))} placeholder="200" />
+                          <InputField label="Unit" value={ingredient.unit} onChange={(value) => setRecipeForm((current) => ({
+                            ...current,
+                            structuredIngredients: (Array.isArray(current.structuredIngredients) ? current.structuredIngredients : []).map((row, rowIndex) => rowIndex === index ? { ...row, unit: value } : row)
+                          }))} placeholder="g, cup, piece" />
+                          <DangerButton type="button" className="md:self-end" onClick={() => setRecipeForm((current) => {
+                            const nextIngredients = (Array.isArray(current.structuredIngredients) ? current.structuredIngredients : []).filter((_, rowIndex) => rowIndex !== index);
+                            return {
+                              ...current,
+                              structuredIngredients: nextIngredients.length ? nextIngredients : [emptyStructuredIngredient()]
+                            };
+                          })}>
+                            Remove
+                          </DangerButton>
+                        </div>
+                      )) : (
+                        <p className="text-sm text-slate-500">No structured ingredients yet.</p>
+                      )}
+                    </div>
+                  </div>
+                  <TextAreaField label="Ingredients (fallback text or notes)" value={recipeForm.ingredients} onChange={(value) => setRecipeForm({ ...recipeForm, ingredients: value })} />
                   <TextAreaField label="Steps" value={recipeForm.steps} onChange={(value) => setRecipeForm({ ...recipeForm, steps: value })} required />
                   <TextAreaField label="Notes" value={recipeForm.notes} onChange={(value) => setRecipeForm({ ...recipeForm, notes: value })} />
                   <InputField label="Image URL" value={recipeForm.imageUrl} onChange={(value) => setRecipeForm({ ...recipeForm, imageUrl: value })} placeholder="Paste a matching recipe image link" />
@@ -2812,7 +4237,10 @@ function App() {
               {displayedRecipes.length === 0 ? (
                 <EmptyState text="No recipes saved yet." />
               ) : (
-                displayedRecipes.map((recipe) => (
+                displayedRecipes.map((recipe) => {
+                  const nutritionEstimate = getRecipeNutritionEstimate(recipe, inventoryWithStatus);
+
+                  return (
                   <article
                     key={recipe.id}
                     className={`overflow-hidden rounded-[1.75rem] border border-kitchen-sage shadow-soft ${
@@ -2837,7 +4265,7 @@ function App() {
                         <div>
                           <h3 className="text-xl font-semibold">{recipe.recipeName}</h3>
                           <p className={`mt-1 text-sm ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white/85" : "text-slate-600") : "text-slate-600"}`}>
-                            {recipe.category} • {recipe.difficulty} • {recipe.prepTime}
+                            {recipe.category} • {recipe.difficulty} • {recipe.prepTime} • {recipe.servings} serving{recipe.servings !== 1 ? "s" : ""}
                           </p>
                         </div>
                         <div className="flex gap-2">
@@ -2850,9 +4278,42 @@ function App() {
                         </div>
                       </div>
                       <div className={`mt-4 space-y-3 text-sm ${recipeViewMode === "picture" ? (recipe.imageUrl ? "rounded-[1.25rem] bg-black/35 p-4 text-white/95 backdrop-blur-[2px]" : "rounded-[1.25rem] bg-white/80 p-4 text-slate-700" ) : "text-slate-700"}`}>
-                        <p><span className={`font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white" : "text-kitchen-moss") : "text-kitchen-moss"}`}>Ingredients:</span> {recipe.ingredients}</p>
+                        {recipe.structuredIngredients?.length ? (
+                          <div>
+                            <p><span className={`font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white" : "text-kitchen-moss") : "text-kitchen-moss"}`}>Ingredients:</span></p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {recipe.structuredIngredients.map((ingredient, index) => (
+                                <span key={`${ingredient.name}-${index}`} className={`rounded-full px-3 py-1 text-xs font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "bg-white/15 text-white" : "bg-kitchen-sage text-kitchen-moss") : "bg-kitchen-sage text-kitchen-moss"}`}>
+                                  {formatStructuredIngredient(ingredient)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p><span className={`font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white" : "text-kitchen-moss") : "text-kitchen-moss"}`}>Ingredients:</span> {recipe.ingredients}</p>
+                        )}
                         <p><span className={`font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white" : "text-kitchen-moss") : "text-kitchen-moss"}`}>Steps:</span> {recipe.steps}</p>
                         <p><span className={`font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white" : "text-kitchen-moss") : "text-kitchen-moss"}`}>Notes:</span> {recipe.notes || "None"}</p>
+                        <div className={`rounded-[1rem] border px-3 py-3 ${recipeViewMode === "picture" ? (recipe.imageUrl ? "border-white/15 bg-white/10 text-white/90" : "border-kitchen-sage/50 bg-kitchen-cream/70 text-slate-700") : "border-kitchen-sage/50 bg-kitchen-cream/70 text-slate-700"}`}>
+                          <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white/80" : "text-kitchen-leaf") : "text-kitchen-leaf"}`}>Nutrition Preview</p>
+                          {nutritionEstimate.hasEstimate ? (
+                            <>
+                              <p className="mt-2 font-medium">
+                                Recipe total: {nutritionEstimate.calories} cal • {formatNutritionNumber(nutritionEstimate.proteinG)}g protein • {formatNutritionNumber(nutritionEstimate.carbsG)}g carbs • {formatNutritionNumber(nutritionEstimate.fatG)}g fat
+                              </p>
+                              <p className="mt-1 font-medium">
+                                Per serving ({nutritionEstimate.servings} total): {nutritionEstimate.caloriesPerServing} cal • {formatNutritionNumber(nutritionEstimate.proteinPerServing)}g protein • {formatNutritionNumber(nutritionEstimate.carbsPerServing)}g carbs • {formatNutritionNumber(nutritionEstimate.fatPerServing)}g fat
+                              </p>
+                              <p className={`mt-1 text-xs ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white/75" : "text-slate-500") : "text-slate-500"}`}>
+                                {nutritionEstimate.usesStructuredEstimate ? "Estimate uses your structured ingredient quantities when the units line up, and falls back to one nutrition serving when they do not." : "Starter estimate based on 1 nutrition serving of each matched ingredient in your inventory."} {nutritionEstimate.nutritionItems.length} of {nutritionEstimate.matchedItems.length} matched ingredients currently have nutrition data.
+                              </p>
+                            </>
+                          ) : (
+                            <p className={`mt-2 text-xs ${recipeViewMode === "picture" ? (recipe.imageUrl ? "text-white/75" : "text-slate-500") : "text-slate-500"}`}>
+                              No nutrition estimate yet. Add ingredient nutrition in Kitchen Inventory to start seeing recipe nutrition here.
+                            </p>
+                          )}
+                        </div>
                         <div className="flex flex-wrap gap-2">
                           {recipe.tags.length > 0 ? recipe.tags.map((tag) => (
                             <span key={tag} className={`rounded-full px-3 py-1 text-xs font-medium ${recipeViewMode === "picture" ? (recipe.imageUrl ? "bg-white/20 text-white backdrop-blur-sm" : "bg-kitchen-sage text-kitchen-moss") : "bg-kitchen-sage text-kitchen-moss"}`}>
@@ -2863,7 +4324,8 @@ function App() {
                       </div>
                     </div>
                   </article>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -2936,6 +4398,20 @@ function App() {
                   )}
                   <SelectField label="Priority" value={inventoryForm.priority} onChange={(value) => setInventoryForm({ ...inventoryForm, priority: value })} options={PRIORITY_OPTIONS} />
                   <InputField label="Tags" value={inventoryForm.tags} onChange={(value) => setInventoryForm({ ...inventoryForm, tags: value })} placeholder="Staple, Breakfast, Protein" />
+                  <div className="md:col-span-2 rounded-[1.5rem] border border-kitchen-sage/60 bg-kitchen-cream/70 p-4">
+                    <div className="mb-4">
+                      <p className="text-sm font-semibold text-kitchen-moss">Nutrition Reference (Per Serving)</p>
+                      <p className="text-xs text-slate-500">This is optional for now, but it will power recipe nutrition and daily food tracking next.</p>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <InputField label="Serving Amount" type="number" value={inventoryForm.nutritionServingAmount} onChange={(value) => setInventoryForm({ ...inventoryForm, nutritionServingAmount: value })} placeholder="1" />
+                      <InputField label="Serving Unit" value={inventoryForm.nutritionServingUnit} onChange={(value) => setInventoryForm({ ...inventoryForm, nutritionServingUnit: value })} placeholder="piece, 100 g, cup cooked" />
+                      <InputField label="Calories" type="number" value={inventoryForm.calories} onChange={(value) => setInventoryForm({ ...inventoryForm, calories: value })} placeholder="72" />
+                      <InputField label="Protein (g)" type="number" value={inventoryForm.proteinG} onChange={(value) => setInventoryForm({ ...inventoryForm, proteinG: value })} placeholder="6.3" />
+                      <InputField label="Carbs (g)" type="number" value={inventoryForm.carbsG} onChange={(value) => setInventoryForm({ ...inventoryForm, carbsG: value })} placeholder="0.4" />
+                      <InputField label="Fat (g)" type="number" value={inventoryForm.fatG} onChange={(value) => setInventoryForm({ ...inventoryForm, fatG: value })} placeholder="4.8" />
+                    </div>
+                  </div>
                   <TextAreaField label="Notes" value={inventoryForm.notes} onChange={(value) => setInventoryForm({ ...inventoryForm, notes: value })} />
                   <div className="md:col-span-2 flex flex-wrap gap-3">
                     <PrimaryButton>{editingInventoryId ? "Update Item" : "Save Item"}</PrimaryButton>
@@ -3003,6 +4479,16 @@ function App() {
                     </div>
                   </div>
                   <p className="mt-3 text-sm text-slate-700">{item.notes || "No notes"}</p>
+                  {(item.nutritionServingAmount || item.nutritionServingUnit || item.calories || item.proteinG || item.carbsG || item.fatG) ? (
+                    <div className="mt-3 rounded-2xl border border-kitchen-sage/50 bg-kitchen-cream/70 px-4 py-3 text-sm text-slate-700">
+                      <p className="font-medium text-kitchen-moss">
+                        Per {item.nutritionServingAmount || 1} {item.nutritionServingUnit || "serving"}
+                      </p>
+                      <p className="mt-1 text-slate-600">
+                        {item.calories ?? "-"} cal • {item.proteinG ?? "-"}g protein • {item.carbsG ?? "-"}g carbs • {item.fatG ?? "-"}g fat
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="mt-4">
                     <InventoryLevelGraph item={item} />
                   </div>
@@ -3040,6 +4526,113 @@ function App() {
                     </div>
                   ))}
                 </div>
+              )}
+            </Panel>
+          </section>
+        )}
+
+
+        {activeTab === "food-log" && (
+          <section className="space-y-6">
+            <div ref={foodLogFormSectionRef}>
+              <Panel
+                title={editingFoodLogId ? "Edit Food Log Entry" : "Log a Meal"}
+                action={
+                  <SecondaryButton type="button" onClick={() => setIsFoodLogFormOpen((current) => !current)}>
+                    {isFoodLogFormOpen ? "Hide Form" : editingFoodLogId ? "Open Form" : "Log Food"}
+                  </SecondaryButton>
+                }
+              >
+                {isFoodLogFormOpen ? (
+                  <form onSubmit={saveFoodLog} className="grid gap-4 md:grid-cols-2">
+                    <SelectField label="Recipe" value={foodLogForm.recipeName} onChange={(value) => setFoodLogForm({ ...foodLogForm, recipeName: value })} options={recipeOptions} placeholder="Select a recipe" required />
+                    <InputField label="Servings Eaten" type="number" value={foodLogForm.servingsEaten} onChange={(value) => setFoodLogForm({ ...foodLogForm, servingsEaten: value })} placeholder="1" required />
+                    <InputField label="Consumed At" type="datetime-local" value={foodLogForm.consumedAt} onChange={(value) => setFoodLogForm({ ...foodLogForm, consumedAt: value })} required />
+                    <TextAreaField label="Notes" value={foodLogForm.notes} onChange={(value) => setFoodLogForm({ ...foodLogForm, notes: value })} />
+                    {selectedFoodLogRecipe ? (
+                      <div className="md:col-span-2 rounded-[1.5rem] border border-kitchen-sage/60 bg-kitchen-cream/70 p-4 text-sm text-slate-700">
+                        <p className="text-sm font-semibold text-kitchen-moss">Estimated Nutrition for This Entry</p>
+                        <p className="mt-2">
+                          {Math.round((selectedFoodLogEstimate?.caloriesPerServing || 0) * Math.max(Number(foodLogForm.servingsEaten || 1) || 1, 1))} cal • {formatNutritionNumber((selectedFoodLogEstimate?.proteinPerServing || 0) * Math.max(Number(foodLogForm.servingsEaten || 1) || 1, 1))}g protein • {formatNutritionNumber((selectedFoodLogEstimate?.carbsPerServing || 0) * Math.max(Number(foodLogForm.servingsEaten || 1) || 1, 1))}g carbs • {formatNutritionNumber((selectedFoodLogEstimate?.fatPerServing || 0) * Math.max(Number(foodLogForm.servingsEaten || 1) || 1, 1))}g fat
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">This uses the current recipe nutrition estimate as a snapshot for the food log entry.</p>
+                      </div>
+                    ) : null}
+                    <div className="md:col-span-2 flex flex-wrap gap-3">
+                      <PrimaryButton>{editingFoodLogId ? "Update Entry" : "Save Entry"}</PrimaryButton>
+                      {editingFoodLogId ? (
+                        <SecondaryButton type="button" onClick={resetFoodLogForm}>Cancel</SecondaryButton>
+                      ) : null}
+                    </div>
+                  </form>
+                ) : (
+                  <p className="text-sm text-slate-600">Open this section when you want to log what you ate.</p>
+                )}
+              </Panel>
+            </div>
+
+            <Panel
+              title="Daily Nutrition Goals"
+              action={<SecondaryButton type="button" onClick={() => setDailyNutritionGoals(defaultDailyNutritionGoals())}>Reset Defaults</SecondaryButton>}
+            >
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <InputField label="Calories Goal" type="number" value={dailyNutritionGoals.calories} onChange={(value) => setDailyNutritionGoals((current) => ({ ...current, calories: Math.max(Number(value || 0) || 0, 0) }))} />
+                <InputField label="Protein Goal (g)" type="number" value={dailyNutritionGoals.proteinG} onChange={(value) => setDailyNutritionGoals((current) => ({ ...current, proteinG: Math.max(Number(value || 0) || 0, 0) }))} />
+                <InputField label="Carbs Goal (g)" type="number" value={dailyNutritionGoals.carbsG} onChange={(value) => setDailyNutritionGoals((current) => ({ ...current, carbsG: Math.max(Number(value || 0) || 0, 0) }))} />
+                <InputField label="Fat Goal (g)" type="number" value={dailyNutritionGoals.fatG} onChange={(value) => setDailyNutritionGoals((current) => ({ ...current, fatG: Math.max(Number(value || 0) || 0, 0) }))} />
+              </div>
+              <p className="mt-3 text-sm text-slate-600">These goals stay saved on this device for now and drive the Food Log progress bars.</p>
+            </Panel>
+
+            <div className="grid gap-4 lg:grid-cols-4">
+              <NutritionTotalCard label="Today Calories" value={Math.round(todaysNutritionTotals.calories)} goal={dailyNutritionGoals.calories} unit="cal" tone="inStock" />
+              <NutritionTotalCard label="Protein" value={roundInventoryValue(todaysNutritionTotals.proteinG)} goal={dailyNutritionGoals.proteinG} unit="g" tone="lowStock" />
+              <NutritionTotalCard label="Carbs" value={roundInventoryValue(todaysNutritionTotals.carbsG)} goal={dailyNutritionGoals.carbsG} unit="g" tone="finished" />
+              <NutritionTotalCard label="Fat" value={roundInventoryValue(todaysNutritionTotals.fatG)} goal={dailyNutritionGoals.fatG} unit="g" tone="medium" />
+            </div>
+
+            <Panel title="Today's Entries">
+              {todaysFoodLogEntries.length === 0 ? (
+                <EmptyState text="No meals logged yet today." />
+              ) : (
+                <div className="space-y-3">
+                  {todaysFoodLogEntries.map((entry) => (
+                    <article key={entry.id} className="rounded-[1.5rem] border border-kitchen-sage bg-white px-4 py-4 shadow-soft">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-lg font-semibold text-kitchen-moss">{entry.recipeName}</h3>
+                          <p className="mt-1 text-sm text-slate-600">{entry.servingsEaten} serving{entry.servingsEaten !== 1 ? "s" : ""} • {new Date(entry.consumedAt).toLocaleString()}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <SecondaryButton type="button" onClick={() => startFoodLogEdit(entry)}>Edit</SecondaryButton>
+                          <DangerButton type="button" onClick={() => deleteFoodLog(entry.id)}>Delete</DangerButton>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-700">{entry.calories} cal • {formatNutritionNumber(entry.proteinG)}g protein • {formatNutritionNumber(entry.carbsG)}g carbs • {formatNutritionNumber(entry.fatG)}g fat</p>
+                      {entry.notes ? <p className="mt-2 text-sm text-slate-600">{entry.notes}</p> : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </Panel>
+
+            <Panel title="Recent Food Log History">
+              {foodLog.length === 0 ? (
+                <EmptyState text="No food log entries yet." />
+              ) : (
+                <SimpleList
+                  items={foodLog.slice(0, 10)}
+                  emptyText="No food log entries yet."
+                  renderItem={(entry) => (
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-kitchen-moss">{entry.recipeName}</p>
+                        <p className="text-sm text-slate-600">{entry.servingsEaten} serving{entry.servingsEaten !== 1 ? "s" : ""} • {new Date(entry.consumedAt).toLocaleString()}</p>
+                      </div>
+                      <span className="text-sm font-medium text-slate-700">{entry.calories} cal</span>
+                    </div>
+                  )}
+                />
               )}
             </Panel>
           </section>
@@ -3159,6 +4752,35 @@ function DashboardCard({ title, count, note }) {
       <p className="mt-3 text-3xl font-semibold">{count}</p>
       <p className="mt-2 text-xs uppercase tracking-[0.16em] text-kitchen-leaf">{note}</p>
     </article>
+  );
+}
+
+function NutritionTotalCard({ label, value, goal = 0, unit = "", tone = "inStock" }) {
+  const toneClasses = {
+    inStock: "bg-gradient-to-r from-emerald-500 to-emerald-300",
+    lowStock: "bg-gradient-to-r from-amber-500 to-yellow-300",
+    finished: "bg-gradient-to-r from-red-500 to-rose-300",
+    medium: "bg-gradient-to-r from-sky-500 to-cyan-300"
+  };
+  const numericValue = Number(value || 0);
+  const numericGoal = Math.max(Number(goal || 0), 0);
+  const rawPercent = numericGoal > 0 ? Math.round((numericValue / numericGoal) * 100) : 0;
+  const barPercent = numericGoal > 0 ? Math.min(rawPercent, 100) : 0;
+
+  return (
+    <div className="rounded-[1.5rem] border border-kitchen-sage bg-white px-4 py-4 shadow-soft">
+      <div className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
+        <span>{label}</span>
+        <span>{value}{unit ? ` ${unit}` : ""}</span>
+      </div>
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+        <span>{numericGoal > 0 ? `${rawPercent}% of goal` : 'No goal set'}</span>
+        <span>{numericGoal > 0 ? `${numericGoal}${unit ? ` ${unit}` : ""} goal` : 'Set a target below'}</span>
+      </div>
+      <div className="mt-4 h-3 rounded-full bg-kitchen-cream">
+        <div className={`h-3 rounded-full ${toneClasses[tone] || toneClasses.inStock}`} style={{ width: `${barPercent}%` }} />
+      </div>
+    </div>
   );
 }
 
