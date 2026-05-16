@@ -7,6 +7,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 const STORAGE_KEYS = {
   recipes: "kitchen-companion-recipes-v4",
   deletedRecipes: "kitchen-companion-deleted-recipes-v1",
+  permanentlyDeletedRecipeNames: "kitchen-companion-permanently-deleted-recipe-names-v1",
   deletedInventory: "kitchen-companion-deleted-inventory-v1",
   inventory: "kitchen-companion-inventory-v5",
   grocery: "kitchen-companion-grocery-v5",
@@ -1955,10 +1956,11 @@ function normalizeRecipes(data) {
   });
 }
 
-function mergeSeedRecipes(existingRecipes, seedRecipes) {
+function mergeSeedRecipes(existingRecipes, seedRecipes, excludedRecipeNames = []) {
   const seen = new Set(existingRecipes.map((recipe) => recipe.recipeName.trim().toLowerCase()));
+  const excluded = new Set((excludedRecipeNames || []).map((name) => String(name || "").trim().toLowerCase()).filter(Boolean));
   const missingSeeds = seedRecipes.filter(
-    (recipe) => !seen.has(recipe.recipeName.trim().toLowerCase())
+    (recipe) => !seen.has(recipe.recipeName.trim().toLowerCase()) && !excluded.has(recipe.recipeName.trim().toLowerCase())
   );
   return [...existingRecipes, ...missingSeeds];
 }
@@ -2711,10 +2713,14 @@ function App() {
   const [recipes, setRecipes] = useState(() =>
     mergeSeedRecipes(
       normalizeRecipes(readStorage(STORAGE_KEYS.recipes, defaultRecipes)),
-      normalizeRecipes(defaultRecipes)
+      normalizeRecipes(defaultRecipes),
+      (readStorage(STORAGE_KEYS.permanentlyDeletedRecipeNames, []) || []).map((name) => String(name || "").trim().toLowerCase()).filter(Boolean)
     )
   );
   const [deletedRecipes, setDeletedRecipes] = useState(() => normalizeRecipes(readStorage(STORAGE_KEYS.deletedRecipes, [])));
+  const [permanentlyDeletedRecipeNames, setPermanentlyDeletedRecipeNames] = useState(() =>
+    (readStorage(STORAGE_KEYS.permanentlyDeletedRecipeNames, []) || []).map((name) => String(name || "").trim().toLowerCase()).filter(Boolean)
+  );
   const [deletedInventory, setDeletedInventory] = useState(() => normalizeInventory(readStorage(STORAGE_KEYS.deletedInventory, [])));
   const [inventory, setInventory] = useState(() => normalizeInventory(readStorage(STORAGE_KEYS.inventory, defaultInventory)));
   const [grocery, setGrocery] = useState(() => normalizeGrocery(readStorage(STORAGE_KEYS.grocery, defaultGrocery)));
@@ -2810,6 +2816,7 @@ function App() {
 
   useEffect(() => writeStorage(STORAGE_KEYS.recipes, recipes), [recipes]);
   useEffect(() => writeStorage(STORAGE_KEYS.deletedRecipes, deletedRecipes), [deletedRecipes]);
+  useEffect(() => writeStorage(STORAGE_KEYS.permanentlyDeletedRecipeNames, permanentlyDeletedRecipeNames), [permanentlyDeletedRecipeNames]);
   useEffect(() => writeStorage(STORAGE_KEYS.deletedInventory, deletedInventory), [deletedInventory]);
   useEffect(() => writeStorage(STORAGE_KEYS.inventory, inventory), [inventory]);
   useEffect(() => writeStorage(STORAGE_KEYS.grocery, grocery), [grocery]);
@@ -3017,7 +3024,7 @@ function App() {
         const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0 || remoteFoodLog.length > 0 || Boolean(remoteDailyNutritionGoals);
 
         if (!hasRemoteData) {
-          const seededRecipes = mergeSeedRecipes(recipes, normalizeRecipes(defaultRecipes));
+          const seededRecipes = mergeSeedRecipes(recipes, normalizeRecipes(defaultRecipes), permanentlyDeletedRecipeNames);
           const seededInventory = inventory;
           const seededGrocery = grocery;
           const seededFoodLog = foodLog;
@@ -3056,7 +3063,7 @@ function App() {
           setDailyNutritionGoals(seededDailyNutritionGoals);
           setHouseholdNotes(seededHouseholdNotes);
         } else {
-          setRecipes(mergeSeedRecipes(remoteRecipes, normalizeRecipes(defaultRecipes)));
+          setRecipes(mergeSeedRecipes(remoteRecipes, normalizeRecipes(defaultRecipes), permanentlyDeletedRecipeNames));
           setInventory(remoteInventory);
           setGrocery(remoteGrocery);
           setFoodLog(remoteFoodLog);
@@ -3084,7 +3091,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [currentUser]);
+  }, [currentUser, permanentlyDeletedRecipeNames]);
 
   useEffect(() => {
     if (!currentUser || !householdId || !hasRemoteDataLoaded || isHydratingData) {
@@ -4015,11 +4022,17 @@ function App() {
     const target = deletedRecipes.find((item) => item.id === id);
     if (!target) return;
 
+    setPermanentlyDeletedRecipeNames((current) => current.filter((name) => name !== target.recipeName.trim().toLowerCase()));
     setRecipes((current) => [target, ...current.filter((item) => item.id !== id)]);
     setDeletedRecipes((current) => current.filter((item) => item.id !== id));
   }
 
   function permanentlyDeleteRecipe(id) {
+    const target = deletedRecipes.find((item) => item.id === id);
+    if (!target) return;
+
+    const recipeKey = target.recipeName.trim().toLowerCase();
+    setPermanentlyDeletedRecipeNames((current) => current.includes(recipeKey) ? current : [recipeKey, ...current]);
     setDeletedRecipes((current) => current.filter((item) => item.id !== id));
   }
 
