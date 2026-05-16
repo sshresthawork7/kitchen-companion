@@ -2711,11 +2711,7 @@ function getSuggestedGroceryQuantity(item) {
 function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [recipes, setRecipes] = useState(() =>
-    mergeSeedRecipes(
-      normalizeRecipes(readStorage(STORAGE_KEYS.recipes, defaultRecipes)),
-      normalizeRecipes(defaultRecipes),
-      (readStorage(STORAGE_KEYS.permanentlyDeletedRecipeNames, []) || []).map((name) => String(name || "").trim().toLowerCase()).filter(Boolean)
-    )
+    normalizeRecipes(readStorage(STORAGE_KEYS.recipes, defaultRecipes))
   );
   const [deletedRecipes, setDeletedRecipes] = useState(() => normalizeRecipes(readStorage(STORAGE_KEYS.deletedRecipes, [])));
   const [permanentlyDeletedRecipeNames, setPermanentlyDeletedRecipeNames] = useState(() =>
@@ -2747,6 +2743,7 @@ function App() {
   const [foodLogForm, setFoodLogForm] = useState(emptyFoodLog());
 
   const [editingRecipeId, setEditingRecipeId] = useState(null);
+  const [editingRecipeOriginalName, setEditingRecipeOriginalName] = useState("");
   const [editingInventoryId, setEditingInventoryId] = useState(null);
   const [editingGroceryId, setEditingGroceryId] = useState(null);
   const [editingFoodLogId, setEditingFoodLogId] = useState(null);
@@ -3024,7 +3021,7 @@ function App() {
         const hasRemoteData = remoteRecipes.length > 0 || remoteInventory.length > 0 || remoteGrocery.length > 0 || remoteFoodLog.length > 0 || Boolean(remoteDailyNutritionGoals);
 
         if (!hasRemoteData) {
-          const seededRecipes = mergeSeedRecipes(recipes, normalizeRecipes(defaultRecipes), permanentlyDeletedRecipeNames);
+          const seededRecipes = recipes.length ? recipes : normalizeRecipes(defaultRecipes);
           const seededInventory = inventory;
           const seededGrocery = grocery;
           const seededFoodLog = foodLog;
@@ -3063,7 +3060,7 @@ function App() {
           setDailyNutritionGoals(seededDailyNutritionGoals);
           setHouseholdNotes(seededHouseholdNotes);
         } else {
-          setRecipes(mergeSeedRecipes(remoteRecipes, normalizeRecipes(defaultRecipes), permanentlyDeletedRecipeNames));
+          setRecipes(remoteRecipes);
           setInventory(remoteInventory);
           setGrocery(remoteGrocery);
           setFoodLog(remoteFoodLog);
@@ -3615,6 +3612,7 @@ function App() {
 
   function resetRecipeForm() {
     setEditingRecipeId(null);
+    setEditingRecipeOriginalName("");
     setRecipeForm(emptyRecipe());
     setIsRecipeFormOpen(false);
   }
@@ -3711,8 +3709,16 @@ function App() {
       return;
     }
     const normalizedName = recipeForm.recipeName.trim().toLowerCase();
+    const originalNameKey = editingRecipeOriginalName.trim().toLowerCase();
+    const editTarget = editingRecipeId
+      ? recipes.find((recipe) => recipe.id === editingRecipeId)
+      : null;
+    const fallbackEditTarget = !editTarget && originalNameKey
+      ? recipes.find((recipe) => recipe.recipeName.trim().toLowerCase() === originalNameKey)
+      : null;
+    const effectiveEditingRecipeId = editTarget?.id || fallbackEditTarget?.id || editingRecipeId;
     const duplicateRecipe = recipes.find(
-      (recipe) => recipe.id !== editingRecipeId && recipe.recipeName.trim().toLowerCase() === normalizedName
+      (recipe) => recipe.id !== effectiveEditingRecipeId && recipe.recipeName.trim().toLowerCase() === normalizedName
     );
 
     if (duplicateRecipe) {
@@ -3721,18 +3727,21 @@ function App() {
     }
 
     const normalizedStructuredIngredients = normalizeStructuredIngredients(recipeForm.structuredIngredients);
+    const serializedStructuredIngredients = normalizedStructuredIngredients.map((ingredient) => formatStructuredIngredient(ingredient)).join(", ");
+    const manualIngredientsText = recipeForm.ingredients.trim();
+    const shouldPreferManualIngredients = Boolean(manualIngredientsText) && manualIngredientsText !== serializedStructuredIngredients;
     const normalized = {
       ...recipeForm,
       servings: Math.max(Number(recipeForm.servings || 1) || 1, 1),
-      structuredIngredients: normalizedStructuredIngredients,
-      ingredients: recipeForm.ingredients.trim() || normalizedStructuredIngredients.map((ingredient) => formatStructuredIngredient(ingredient)).join(", "),
+      structuredIngredients: shouldPreferManualIngredients ? [] : normalizedStructuredIngredients,
+      ingredients: manualIngredientsText || serializedStructuredIngredients,
       tags: recipeForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
     };
 
-    if (editingRecipeId) {
+    if (effectiveEditingRecipeId) {
       setRecipes((current) =>
         current.map((recipe) =>
-          recipe.id === editingRecipeId ? { ...normalized, id: editingRecipeId } : recipe
+          recipe.id === effectiveEditingRecipeId ? { ...normalized, id: effectiveEditingRecipeId } : recipe
         )
       );
     } else {
@@ -3916,6 +3925,7 @@ function App() {
 
   function startRecipeEdit(recipe) {
     setEditingRecipeId(recipe.id);
+    setEditingRecipeOriginalName(recipe.recipeName || "");
     setRecipeForm({
       ...recipe,
       servings: recipe.servings || 1,
